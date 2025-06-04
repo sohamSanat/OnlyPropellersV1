@@ -6,7 +6,7 @@
     "scripts": {
         "start": "node server.js",
         "dev": "nodemon server.js",
-        "postinstall": "npm exec -- puppeteer browsers install chrome"
+        "postinstall": "node ./node_modules/puppeteer/lib/cjs/puppeteer/node/cli.js browsers install chrome"
     },
     "keywords": [
         "scraper",
