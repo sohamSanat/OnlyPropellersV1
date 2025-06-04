@@ -1,0 +1,35 @@
+d:\projects\Ai_projects\Coomer_Scrapper_v1
+├── README.md
+├── data\
+│   └── coomers\
+└── my-scraper-website\
+    ├── backend\
+    │   ├── cli-runner.js
+    │   ├── config\
+    │   │   └── config.js
+    │   ├── data\
+    │   │   └── coomers\
+    │   │       └── sophieraiin\
+    │   ├── index.js
+    │   ├── master.js
+    │   ├── package-lock.json
+    │   ├── package.json
+    │   ├── scraper.js
+    │   ├── server.js
+    │   └── tempCodeRunnerFile.js
+    ├── my-scraper-frontend\
+    │   ├── .gitignore
+    │   ├── README.md
+    │   ├── eslint.config.js
+    │   ├── index.html
+    │   ├── package-lock.json
+    │   ├── package.json
+    │   ├── src\
+    │   │   ├── App.css
+    │   │   ├── App.jsx
+    │   │   ├── assets\
+    │   │   ├── index.css
+    │   │   └── main.jsx
+    │   └── vite.config.js
+    ├── package-lock.json
+    └── package.json
