@@ -3,19 +3,46 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
-const runMasterScript = require('./master'); // Import the master script
+const runMasterScript = require('./master');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
-    cors: {
-        origin: "http://localhost:5173", // Frontend URL
-        methods: ["GET", "POST"]
-    }
-});
 
-// Middleware
-app.use(cors());
+// --- REQUIRED CODE CHANGE FOR CORS ---
+// This allows your deployed frontend to connect to your backend.
+// process.env.FRONTEND_URL will be the value you set on Render (e.g., https://your-frontend-app.onrender.com)
+const allowedOrigins = [
+    "http://localhost:5173", // Keep for local development
+    process.env.FRONTEND_URL // THIS IS WHERE YOUR RENDER FRONTEND URL WILL BE USED
+].filter(Boolean); // Filters out any undefined/null entries if FRONTEND_URL is not set locally
+
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        // Or if the origin is in our allowed list
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.error(`CORS Blocked: Origin ${origin} not allowed`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ["GET", "POST"]
+};
+
+// Apply CORS to both Express routes and Socket.IO
+app.use(cors(corsOptions)); // Apply to Express routes
+const io = socketIo(server, {
+    cors: corsOptions // Apply to Socket.IO
+});
+// --- END OF REQUIRED CODE CHANGE FOR CORS ---
+
+// ... (rest of your server.js code, including socket.io connection logic and /api/scrape endpoint, remains the same)
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Backend server running on port ${PORT}`);
+});
 app.use(express.json()); // To parse JSON request bodies
 
 const connectedSockets = new Map(); // Store connected sockets by ID
@@ -72,9 +99,4 @@ app.post('/api/scrape', async (req, res) => {
         console.error(`Error during scraping for ${modelName}:`, error);
         clientSocket.emit('scrape_error', { message: `Scraping failed for ${modelName}: ${error.message}` });
     }
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Backend server running on port ${PORT}`);
 });
