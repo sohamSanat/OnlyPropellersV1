@@ -67,7 +67,7 @@ app.post('/api/scrape', async (req, res) => {
     console.log('Socket ID (from header):', socketId);
     console.log('All Headers Received:');
     for (const key in req.headers) {
-        console.log(`  ${key}: ${req.headers[key]}`);
+        console.log(`   ${key}: ${req.headers[key]}`);
     }
     console.log('-----------------------------');
 
