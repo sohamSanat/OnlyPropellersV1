@@ -1,21 +1,12 @@
-// backend/server.js
-const express = require('express');
-const http = require('http');
-const socketIo = require('socket.io');
-const cors = require('cors');
-const runMasterScript = require('./master'); // Import the master script
-
-const app = express();
-const server = http.createServer(app);
 const io = socketIo(server, {
     cors: {
-        origin: "http://localhost:5173", // Frontend URL
+        origin: "http://localhost:5173", // <-- This needs to change
         methods: ["GET", "POST"]
     }
 });
 
-// Middleware
-app.use(cors());
+// Middleware (if you have app.use(cors()) without options, it's also affected)
+app.use(cors()); // <-- This also needs to change
 app.use(express.json()); // To parse JSON request bodies
 
 const connectedSockets = new Map(); // Store connected sockets by ID
@@ -72,9 +63,4 @@ app.post('/api/scrape', async (req, res) => {
         console.error(`Error during scraping for ${modelName}:`, error);
         clientSocket.emit('scrape_error', { message: `Scraping failed for ${modelName}: ${error.message}` });
     }
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`Backend server running on port ${PORT}`);
 });
