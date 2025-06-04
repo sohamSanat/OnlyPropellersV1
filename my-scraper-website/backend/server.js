@@ -1,12 +1,32 @@
 // backend/server.js
 const express = require('express');
 const http = require('http');
-const socketIo = require('socket.io');
+
+// --- START OF DEBUGGING AND CORS CHANGES ---
+
+// Define socketIo variable outside the try-catch to ensure it's in scope
+let socketIo;
+try {
+    // Attempt to require the socket.io module
+    socketIo = require('socket.io');
+    console.log('DEBUG: socket.io module loaded successfully!');
+    console.log('DEBUG: Type of socketIo:', typeof socketIo);
+    // Log a substring of the socketIo object to avoid logging the entire large object
+    console.log('DEBUG: socketIo object (first 50 chars):', String(socketIo).substring(0, 50));
+} catch (error) {
+    // If requiring socket.io fails, log the error message
+    console.error('ERROR: Failed to require socket.io:', error.message);
+    // It's good practice to exit the process if a critical dependency can't be loaded
+    // This makes the failure explicit in the deployment logs.
+    process.exit(1);
+}
+
 const cors = require('cors');
 const runMasterScript = require('./master');
 
 const app = express();
 const server = http.createServer(app);
+<<<<<<< HEAD
 
 // --- REQUIRED CODE CHANGE FOR CORS ---
 // This allows your deployed frontend to connect to your backend.
@@ -43,6 +63,43 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Backend server running on port ${PORT}`);
 });
+=======
+
+// Define allowed origins dynamically based on environment or multiple static origins
+// process.env.FRONTEND_URL will be set by Render in production.
+// It falls back to localhost for local development.
+const allowedOrigins = [
+    "http://localhost:5173", // For local frontend development
+    process.env.FRONTEND_URL // This will be your deployed frontend URL on Render
+].filter(Boolean); // Filters out any undefined/null entries if FRONTEND_URL is not set
+
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        // Or if the origin is in our allowed list
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.error(`CORS Blocked: Origin ${origin} not allowed`);
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    methods: ["GET", "POST"]
+};
+
+// Apply CORS to both Express routes and Socket.IO
+app.use(cors(corsOptions));
+
+// Initialize Socket.IO with the http server and CORS options
+// This is the line that previously caused the ReferenceError, now protected by try-catch
+const io = socketIo(server, {
+    cors: corsOptions
+});
+// --- END OF DEBUGGING AND CORS CHANGES ---
+
+
+// Middleware
+>>>>>>> f27474f4844d00dac86e562ebceaca7cd8a961c6
 app.use(express.json()); // To parse JSON request bodies
 
 const connectedSockets = new Map(); // Store connected sockets by ID
@@ -67,7 +124,11 @@ app.post('/api/scrape', async (req, res) => {
     console.log('Socket ID (from header):', socketId);
     console.log('All Headers Received:');
     for (const key in req.headers) {
+<<<<<<< HEAD
         console.log(`   ${key}: ${req.headers[key]}`);
+=======
+        console.log(`  ${key}: ${req.headers[key]}`);
+>>>>>>> f27474f4844d00dac86e562ebceaca7cd8a961c6
     }
     console.log('-----------------------------');
 
@@ -100,3 +161,11 @@ app.post('/api/scrape', async (req, res) => {
         clientSocket.emit('scrape_error', { message: `Scraping failed for ${modelName}: ${error.message}` });
     }
 });
+<<<<<<< HEAD
+=======
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Backend server running on port ${PORT}`);
+});
+>>>>>>> f27474f4844d00dac86e562ebceaca7cd8a961c6

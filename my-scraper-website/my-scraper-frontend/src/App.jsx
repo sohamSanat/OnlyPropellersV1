@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
+<<<<<<< HEAD
 // src/App.jsx
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -14,6 +15,11 @@ import io from 'socket.io-client';
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 // --- END OF REQUIRED CODE CHANGE FOR BACKEND URL ---
 
+=======
+// This will use the VITE_BACKEND_URL environment variable you set on Render.
+// During local development, it will fall back to 'http://localhost:3000'.
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
+>>>>>>> f27474f4844d00dac86e562ebceaca7cd8a961c6
 
 function App() {
   const [modelName, setModelName] = useState('');
@@ -155,8 +161,10 @@ function App() {
     console.log('handleScrape: Function triggered.');
 
     if (!modelName) {
-      alert('Please enter an OF model username.');
-      console.warn('handleScrape: Model name is empty.');
+      // Replaced alert with console.warn as per instructions
+      console.warn('Please enter an OF model username.');
+      // You might want to update a state variable to display an error message in the UI instead of alert
+      setCurrentStatusMessage('Error: Please enter an OF model username.');
       return;
     }
 
@@ -173,8 +181,9 @@ function App() {
     }
 
     if (isScraping) {
-      alert('Scraping is already in progress!');
-      console.warn('handleScrape: Scraping already in progress.');
+      // Replaced alert with console.warn as per instructions
+      console.warn('Scraping is already in progress!');
+      setCurrentStatusMessage('Scraping is already in progress!');
       return;
     }
 
