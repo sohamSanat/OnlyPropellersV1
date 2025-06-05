@@ -1,309 +1,209 @@
-// src/App.jsx
-
+// ... (existing imports)
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
 // --- REQUIRED CODE CHANGE FOR BACKEND URL ---
-// This will use the VITE_BACKEND_URL environment variable you set on Render.
-// During local development, it will fall back to 'http://localhost:3000'.
+// You will set this environment variable on Render, e.g., https://your-backend-app.onrender.com
+// For local development, it will default to localhost:3000
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
-// --- END OF REQUIRED CODE CHANGE FOR BACKEND URL ---
-
+// --- END REQUIRED CODE CHANGE ---
 
 function App() {
   const [modelName, setModelName] = useState('');
-  const [isScraping, setIsScraping] = useState(false);
-  const socketRef = useRef(null); // Use useRef for the socket instance
+  const [status, setStatus] = useState('Enter a model name to start scraping.');
+  const [scrapedImages, setScrapedImages] = useState([]);
+  const [scrapeComplete, setScrapeComplete] = useState(false); // New state to track completion
+  const [progress, setProgress] = useState(0); // For total estimated posts
+  const [estimatedTimeMessage, setEstimatedTimeMessage] = useState(''); // For estimated time
+  const socketRef = useRef(null);
+  const messagesEndRef = useRef(null); // For auto-scrolling status messages
 
-  const [isSocketConnected, setIsSocketConnected] = useState(false);
-  const [currentStatusMessage, setCurrentStatusMessage] = useState('Initializing...');
-  const [totalEstimatedPosts, setTotalEstimatedPosts] = useState(0);
-  const [remainingSeconds, setRemainingSeconds] = useState(0);
-
-  // NEW STATE: To track if socket.id is actually ready
-  const [isSocketIdReady, setIsSocketIdReady] = useState(false);
-  const [showComingSoon, setShowComingSoon] = useState(false); // New state for "Coming soon" popup
-
-  // --- useEffect for Socket.IO connection and real-time data ---
   useEffect(() => {
-    console.log('Socket Init: Starting Socket.IO connection attempt...');
-    const newSocket = io(BACKEND_URL);
-    socketRef.current = newSocket;
-
-    newSocket.on('connect', () => {
-      console.log('Socket.IO Event: CONNECTED! Full socket object:', newSocket);
-      console.log('Socket.IO connected ID (from event):', newSocket.id);
-      setIsSocketConnected(true);
-      if (newSocket.id) {
-          setIsSocketIdReady(true); // Set ready when ID is confirmed on connect
-          setCurrentStatusMessage('Program is up and ready for hack.');
-      } else {
-          console.warn('Socket.IO connected, but ID is not immediately available on connect event.');
-          setCurrentStatusMessage('Connected, but ID not ready. Please wait...');
-      }
+    // --- SOCKET.IO CONNECTION ---
+    // Ensure the socket connects to your backend URL
+    socketRef.current = io(BACKEND_URL, {
+      transports: ['websocket', 'polling']
     });
 
-    // Add a small delay to check if ID becomes available shortly after connect
-    const idCheckInterval = setInterval(() => {
-        if (socketRef.current && socketRef.current.id && !isSocketIdReady) {
-            console.log('Socket.IO Deferred Check: ID became available:', socketRef.current.id);
-            setIsSocketIdReady(true);
-            setCurrentStatusMessage('Please wait for couple of seconds for download to start.');
-        } else if (socketRef.current && !socketRef.current.id) {
-            console.log('Socket.IO Deferred Check: ID still undefined. Current state:', socketRef.current);
+    socketRef.current.on('connect', () => {
+      console.log('Socket.IO Event: CONNECTED!');
+      setStatus('Connected to backend. Enter a model name.');
+    });
+
+    socketRef.current.on('progress_update', (data) => {
+      console.log('Socket.IO Event: Progress Update:', data.message);
+      setStatus(prevStatus => {
+        const newMessage = data.message;
+        // Limit the number of status messages displayed for readability
+        const statusLines = prevStatus.split('\n');
+        if (statusLines.length > 10) { // Keep only the last 10 lines
+          statusLines.shift();
         }
-    }, 500); // Check every 500ms for a few seconds
-
-    newSocket.on('estimated_time_info', (data) => {
-      console.log('Socket.IO Event: Received estimated time info:', data);
-      setTotalEstimatedPosts(data.totalEstimatedPosts);
-      setRemainingSeconds(data.totalEstimatedPosts * 3);
-      if (isScraping) {
-          setCurrentStatusMessage('Estimating total posts...');
-      }
+        return statusLines.join('\n') + `\n${newMessage}`;
+      });
+      // Optionally, you might update a progress bar here if you have one
     });
 
-    newSocket.on('scrape_complete', (data) => {
-      console.log('Socket.IO Event: Scraping Completed:', data.message);
-      setCurrentStatusMessage(`Scraping Complete: ${data.message}`);
-      setIsScraping(false);
-      setRemainingSeconds(0);
-      setTotalEstimatedPosts(0);
-    });
-
-    newSocket.on('scrape_error', (data) => {
-      console.error('Socket.IO Event: Scraping Error:', data.message);
-      setCurrentStatusMessage(`Scraping Error: ${data.message}`);
-      setIsScraping(false);
-      setRemainingSeconds(0);
-      setTotalEstimatedPosts(0);
-    });
-
-    newSocket.on('disconnect', (reason) => {
-      console.log('Socket.IO Event: DISCONNECTED! Reason:', reason);
-      setIsSocketConnected(false);
-      setIsSocketIdReady(false); // Reset ID readiness
-      setCurrentStatusMessage('Disconnected. Please refresh if issues persist.');
-      setIsScraping(false);
-      setRemainingSeconds(0);
-      setTotalEstimatedPosts(0);
-      // REMOVED: setFakeHackerEventText('');
-    });
-
-    newSocket.on('reconnect', (attemptNumber) => {
-        console.log(`Socket.IO Event: Reconnected after ${attemptNumber} attempts`);
-        setIsSocketConnected(true);
-        if (newSocket.id) {
-            setIsSocketIdReady(true);
-            setCurrentStatusMessage('Reconnected. Ready to search.');
-        } else {
-            console.warn('Socket.IO reconnected, but ID is not immediately available.');
+    socketRef.current.on('image_scraped', (data) => {
+      console.log('Socket.IO Event: Received scraped image URL:', data.imageUrl);
+      setScrapedImages(prevImages => {
+        // Prevent adding duplicate images if the same URL is emitted again
+        if (!prevImages.some(img => img.imageUrl === data.imageUrl)) {
+            return [...prevImages, data];
         }
+        return prevImages;
+      });
     });
 
-    newSocket.on('reconnect_error', (error) => {
-        console.error('Socket.IO Event: Reconnect error:', error);
-        setCurrentStatusMessage('Reconnect error. Check backend.');
+    socketRef.current.on('scrape_complete', (data) => {
+      console.log('Socket.IO Event: SCRAPE COMPLETE:', data.message);
+      setStatus(prevStatus => prevStatus + `\n--- ${data.message} ---`);
+      setScrapeComplete(true); // Set scrapeComplete to true on completion
     });
 
-    newSocket.on('connect_error', (error) => {
-        console.error('Socket.IO Event: Initial connection error:', error);
-        setCurrentStatusMessage(`Connection error: ${error.message}`);
-        setIsSocketConnected(false); // Ensure connection state is false
-        setIsSocketIdReady(false); // Ensure ID readiness is false
+    socketRef.current.on('scrape_error', (data) => {
+      console.error('Socket.IO Event: SCRAPE ERROR:', data.message);
+      setStatus(prevStatus => prevStatus + `\nERROR: ${data.message}`);
+      setScrapeComplete(true); // Also set complete on error to allow interaction
+    });
+
+    // Handle estimated time info
+    socketRef.current.on('estimated_time_info', (data) => {
+      const estimatedPosts = data.totalEstimatedPosts;
+      // You can refine this estimation based on your observed average time per post
+      const estimatedMinutes = Math.ceil(estimatedPosts / 50 * 0.5); // Example: 0.5 min per 50 posts
+      setEstimatedTimeMessage(`Estimated total posts: ${estimatedPosts}. Estimated scraping time: ${estimatedMinutes} minutes.`);
+    });
+
+
+    socketRef.current.on('disconnect', () => {
+      console.log('Socket.IO Event: DISCONNECTED!');
+      setStatus(prevStatus => prevStatus + '\nDisconnected from backend.');
     });
 
     return () => {
-      console.log('Socket Cleanup: Disconnecting Socket.IO...');
-      clearInterval(idCheckInterval); // Clear the interval on unmount
-      newSocket.disconnect();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
     };
   }, []);
 
-  // --- useEffect for Countdown Timer ---
+  // Auto-scroll messages to the bottom
   useEffect(() => {
-    let timerId;
-    if (isScraping && totalEstimatedPosts > 0 && remainingSeconds > 0) {
-      timerId = setInterval(() => {
-        setRemainingSeconds(prevSeconds => prevSeconds - 1);
-      }, 1000);
-    } else if (remainingSeconds <= 0 && isScraping) {
-        setRemainingSeconds(0);
-    }
-    return () => clearInterval(timerId);
-  }, [isScraping, remainingSeconds, totalEstimatedPosts]);
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [status]);
 
-  const handleOnlyChatClick = () => {
-    setShowComingSoon(true);
-    setTimeout(() => {
-      setShowComingSoon(false);
-    }, 2000); // Disappear after 5 seconds
-  };
 
-  const formatTime = (totalSeconds) => {
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  };
-
-  const handleScrape = async () => {
-    console.log('handleScrape: Function triggered.');
-
+  const startScrape = async () => {
     if (!modelName) {
-      // Replaced alert with console.warn as per instructions
-      console.warn('Please enter an OF model username.');
-      // You might want to update a state variable to display an error message in the UI instead of alert
-      setCurrentStatusMessage('Error: Please enter an OF model username.');
+      setStatus('Please enter a model name.');
       return;
     }
 
-    // CRITICAL CHECKS: Now using isSocketIdReady state
-    console.log('handleScrape DEBUG: isSocketConnected:', isSocketConnected);
-    console.log('handleScrape DEBUG: isSocketIdReady:', isSocketIdReady);
-    console.log('handleScrape DEBUG: socketRef.current value:', socketRef.current);
-    console.log('handleScrape DEBUG: socketRef.current.id value:', socketRef.current ? socketRef.current.id : 'ID is NULL/UNDEFINED');
-
-    if (!isSocketConnected || !isSocketIdReady || !socketRef.current || !socketRef.current.id) {
-        setCurrentStatusMessage('Error: Not connected to backend or ID not ready. Please wait or refresh.');
-        console.error('handleScrape ERROR: Socket connection or ID not ready. Cannot initiate scrape.');
-        return;
-    }
-
-    if (isScraping) {
-      // Replaced alert with console.warn as per instructions
-      console.warn('Scraping is already in progress!');
-      setCurrentStatusMessage('Scraping is already in progress!');
-      return;
-    }
-
-    setIsScraping(true);
-    setCurrentStatusMessage('Estimating total posts...');
-    setTotalEstimatedPosts(0);
-    setRemainingSeconds(0);
-
-    setRemainingSeconds(0);
-    console.log('DEBUG: handleScrape - Before fetch call. isSocketConnected:', isSocketConnected);
-    console.log('DEBUG: handleScrape - Before fetch call. isSocketIdReady:', isSocketIdReady);
-    console.log('DEBUG: handleScrape - Before fetch call. socketRef.current.id:', socketRef.current ? socketRef.current.id : 'N/A');
+    setStatus('Initiating scrape...');
+    setScrapedImages([]); // Clear previous images
+    setScrapeComplete(false); // Reset completion status
+    setProgress(0); // Reset progress
+    setEstimatedTimeMessage(''); // Reset estimated time
 
     try {
-      console.log(`handleScrape: Sending fetch request for model: ${modelName} with socket ID: ${socketRef.current.id}`);
       const response = await fetch(`${BACKEND_URL}/api/scrape`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-socket-id': socketRef.current.id
+          'X-Socket-ID': socketRef.current.id, // Pass the socket ID in the header
         },
         body: JSON.stringify({ modelName }),
       });
 
       const data = await response.json();
-      if (!response.ok) {
-        const errorMessage = data.error || 'Failed to start scraping (unknown error)';
-        console.error('handleScrape ERROR: Backend response not OK:', errorMessage);
-        throw new Error(errorMessage);
+      if (response.ok) {
+        setStatus(`Scrape initiated: ${data.message}`);
+      } else {
+        setStatus(`Error initiating scrape: ${data.error}`);
       }
-      console.log('handleScrape: Scrape request sent successfully:', data.message);
     } catch (error) {
-      console.error('handleScrape ERROR: Error sending scrape request:', error);
-      setCurrentStatusMessage(`Error initiating scrape: ${error.message}`);
-      setIsScraping(false);
-      setRemainingSeconds(0);
-      setTotalEstimatedPosts(0);
+      console.error('Error sending scrape request:', error);
+      setStatus(`Network error: ${error.message}`);
     }
   };
 
-  const displayedMessage = currentStatusMessage;
+  // Function to get a clean filename from a URL for the download attribute
+  const getFilenameFromUrl = (url) => {
+    try {
+      const urlObj = new URL(url);
+      const pathname = urlObj.pathname;
+      const filename = pathname.substring(pathname.lastIndexOf('/') + 1);
+      // Optional: Clean up any query parameters or Cloudinary transformation suffixes
+      return filename.split('?')[0].split(',')[0] || 'download';
+    } catch (e) {
+      return 'download'; // Fallback filename
+    }
+  };
 
-  const shouldShowStatusContent = isScraping || displayedMessage.includes("Scraping Complete") || displayedMessage.includes("Scraping Error") || displayedMessage.includes("Disconnected") || displayedMessage.includes("Please wait for couple of seconds for download to start.");
-
-  // Calculate progress for the progress bar
-  const progress = totalEstimatedPosts > 0 ? ((totalEstimatedPosts * 3 - remainingSeconds) / (totalEstimatedPosts * 3)) * 100 : 0;
 
   return (
-    <div style={styles.body}>
-      <div style={styles.headerContainer}>
-        <div style={styles.logo}>OnlyPropellers</div>
-        {/* Wrap the button and popup in a div that is positioned relative */}
-        <div style={styles.buttonWrapper}>
-          <button style={styles.addButton} onClick={handleOnlyChatClick}>OnlyChat</button>
-          {showComingSoon && (
-            <div style={styles.comingSoonPopup}>
-              Coming soon
-            </div>
-          )}
-        </div>
+    <div style={{ padding: '20px', maxWidth: '800px', margin: 'auto', fontFamily: 'Arial, sans-serif' }}>
+      <h1>OnlyFans Scraper (Coomer.su)</h1>
+      <p style={{ color: '#555' }}>
+        Enter an OnlyFans model's username from Coomer.su to begin scraping.
+        (e.g., `sophieraiin` or `stella_moon`)
+      </p>
+
+      <div style={{ marginBottom: '20px' }}>
+        <input
+          type="text"
+          value={modelName}
+          onChange={(e) => setModelName(e.target.value)}
+          placeholder="Enter model username"
+          style={{ padding: '10px', marginRight: '10px', width: '200px' }}
+        />
+        <button onClick={startScrape} style={{ padding: '10px 15px', backgroundColor: '#007bff', color: 'white', border: 'none', cursor: 'pointer' }}>
+          Hack
+        </button>
       </div>
 
-      <div style={styles.mainContent}>
-        <h1 style={styles.title}>
-          Hack{' '}
-          <span style={styles.onlyfansLogo}>
-            <span style={styles.lockIcon}>&#128274;</span>Only<span style={styles.fansText}>Fans</span>
-          </span>{' '}
-          Profiles
-        </h1>
-        <p style={styles.subtitle}>Get latest posts of any OnlyFans model for free </p>
+      {estimatedTimeMessage && <p style={{ fontStyle: 'italic', color: '#666' }}>{estimatedTimeMessage}</p>}
 
-        <div style={styles.searchBarContainer}>
-          <span style={styles.searchIcon}>&#128269;</span>
-          <input
-            type="text"
-            placeholder="Username of model..."
-            value={modelName}
-            onChange={(e) => setModelName(e.target.value)}
-            style={styles.searchInput}
-            // DISABLED IF SCRAPING, NOT CONNECTED, OR SOCKET ID IS NOT READY
-            disabled={isScraping || !isSocketConnected || !isSocketIdReady}
-          />
-          <button
-            onClick={handleScrape}
-            style={(isScraping || !isSocketConnected || !isSocketIdReady) ? { ...styles.searchButton, ...styles.searchButtonDisabled } : styles.searchButton}
-            // DISABLED IF SCRAPING, NOT CONNECTED, OR SOCKET ID IS NOT READY
-            disabled={isScraping || !isSocketConnected || !isSocketIdReady}
-          >
-            {isScraping ? 'Searching...' : 'Hack'}
+      <div style={{ border: '1px solid #ccc', padding: '15px', minHeight: '150px', maxHeight: '300px', overflowY: 'scroll', backgroundColor: '#f9f9f9', whiteSpace: 'pre-wrap', marginBottom: '20px' }}>
+        <p style={{ margin: 0 }}>{status}</p>
+        <div ref={messagesEndRef} /> {/* For auto-scrolling */}
+      </div>
+
+      <h2>Scraped Images</h2>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', border: '1px solid #eee', padding: '10px', minHeight: '100px' }}>
+        {scrapedImages.length === 0 && <p>No images scraped yet.</p>}
+        {scrapedImages.map((image, index) => (
+          <div key={index} style={{ border: '1px solid #ddd', padding: '5px', borderRadius: '5px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            {/* Download Link Wrapper */}
+            <a
+              href={image.imageUrl}
+              download={getFilenameFromUrl(image.imageUrl)} // Suggest a filename for download
+              target="_blank" // Opens in new tab
+              rel="noopener noreferrer" // Security best practice
+              style={{ textDecoration: 'none', color: 'inherit' }}
+            >
+              <img
+                src={image.imageUrl}
+                alt={`Scraped Image ${index}`}
+                style={{ width: '150px', height: '150px', objectFit: 'cover', borderRadius: '3px' }}
+              />
+              <button style={{ marginTop: '5px', padding: '8px 12px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>
+                Download
+              </button>
+            </a>
+          </div>
+        ))}
+      </div>
+
+      {/* You can add a "Download All" button here, if you implement the backend ZIP logic */}
+      {/*
+      {scrapeComplete && scrapedImages.length > 0 && (
+          <button style={{ padding: '10px 15px', backgroundColor: '#6c757d', color: 'white', border: 'none', cursor: 'pointer', marginTop: '20px' }}>
+              Download All Scraped Images (ZIP)
           </button>
-        </div>
-
-        <div style={styles.statusContainer}>
-          {shouldShowStatusContent ? (
-            <>
-              <p style={styles.statusMessage}>{displayedMessage}</p>
-
-              <div style={styles.countdownDisplay}>
-                {isScraping && totalEstimatedPosts > 0 && remainingSeconds > 0 && (
-                  <span>
-                    Estimated Time Left: <span style={styles.countdownTimeText}>{formatTime(remainingSeconds)}</span>
-                  </span>
-                )}
-                {isScraping && totalEstimatedPosts === 0 && currentStatusMessage === 'Estimating total posts...' && (
-                  <span>Estimating total posts...</span>
-                )}
-              </div>
-              {isScraping && totalEstimatedPosts > 0 && (
-                <p style={{ fontSize: '1em', color: '#007bff', fontWeight: 'bold', marginTop: '5px' }}>
-                  Stealing {totalEstimatedPosts} posts...
-                </p>
-              )}
-              {isScraping && totalEstimatedPosts > 0 && (
-                <div style={styles.progressBarContainer}>
-                  <div style={{ ...styles.progressBarFill, width: `${progress}%` }}></div>
-                </div>
-              )}
-              {isScraping && (
-                <p style={{ fontSize: '0.85em', color: '#777', marginTop: '5px', color: "rgb(237, 10, 10)" }}>
-                  Please check your download folder and find a folder called "OnlyFans Hacker"
-                </p>
-              )}
-            </>
-          ) : (
-            <div style={{minHeight: '86px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ccc'}}>
-                Status updates will appear here.
-            </div>
-          )}
-        </div>
-      </div>
+      )}
+      */}
     </div>
   );
 }
