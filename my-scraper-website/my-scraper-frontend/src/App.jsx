@@ -4,26 +4,23 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
 // --- REQUIRED CODE CHANGE FOR BACKEND URL ---
-// You will set this environment variable on Render, e.g., https://your-backend-app.onrender.com
-// For local development, it will default to localhost:3000
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 // --- END REQUIRED CODE CHANGE ---
 
 
 function App() {
   const [modelName, setModelName] = useState('');
-  // This will be the main, high-level status message for the user.
   const [currentStatusMessage, setCurrentStatusMessage] = useState('Initializing...');
-  const [isScraping, setIsScraping] = useState(false); // Tracks if a scrape is active
-  const [scrapedImageUrls, setScrapedImageUrls] = useState([]); // Stores Cloudinary image URLs
-  const [totalEstimatedPosts, setTotalEstimatedPosts] = useState(0); // From backend estimation
-  const [remainingSeconds, setRemainingSeconds] = useState(0); // Countdown for scraping
-  const [isSocketConnected, setIsSocketConnected] = useState(false); // Socket connection status
-  const [isSocketIdReady, setIsSocketIdReady] = useState(false); // Indicates if socket.id is available
+  const [isScraping, setIsScraping] = useState(false);
+  // Keeping scrapedImageUrls state to know if content was found for "Download All" button logic
+  const [scrapedImageUrls, setScrapedImageUrls] = useState([]);
+  const [totalEstimatedPosts, setTotalEstimatedPosts] = useState(0);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
+  const [isSocketIdReady, setIsSocketIdReady] = useState(false);
 
   const socketRef = useRef(null);
-  // Removed messagesEndRef as we are no longer streaming verbose logs to UI
-  const [showComingSoon, setShowComingSoon] = useState(false); // For "OnlyChat" popup
+  const [showComingSoon, setShowComingSoon] = useState(false);
 
 
   // --- useEffect for Socket.IO connection and real-time data ---
@@ -41,51 +38,46 @@ function App() {
       }
     });
 
-    // Add a small delay to check if ID becomes available shortly after connect
     const idCheckInterval = setInterval(() => {
         if (socketRef.current && socketRef.current.id && !isSocketIdReady) {
             setIsSocketIdReady(true);
-            setCurrentStatusMessage('Ready to scrape. Enter a model name.'); // More concise ready message
+            setCurrentStatusMessage('Ready to scrape. Enter a model name.');
         }
     }, 500);
 
-    // This event is sent when master.js has estimated the total posts
     newSocket.on('estimated_time_info', (data) => {
       setTotalEstimatedPosts(data.totalEstimatedPosts);
-      // Assuming each post takes approx. 3 seconds as per your checkNumberOfPages logic
       setRemainingSeconds(data.totalEstimatedPosts * 3);
-      if (isScraping) { // Only update message if actively scraping
+      if (isScraping) {
           setCurrentStatusMessage('Estimating total posts...');
       }
     });
 
-    // This event is sent each time an image/video is scraped and uploaded
     newSocket.on('image_scraped', (data) => {
+      // Still store the URLs, even if not displayed, to know what to download later
       setScrapedImageUrls(prevUrls => {
         if (!prevUrls.some(img => img.imageUrl === data.imageUrl)) {
             return [...prevUrls, data];
         }
         return prevUrls;
       });
-      // Update status to show progress like "Scraping X of Y images..."
       setCurrentStatusMessage(`Scraping and Uploading... (${scrapedImageUrls.length + 1} images processed)`);
     });
 
 
     newSocket.on('scrape_complete', (data) => {
       setCurrentStatusMessage(`Scraping Complete: ${data.message}`);
-      setIsScraping(false); // Reset scraping state
-      setRemainingSeconds(0); // Reset timer
-      setTotalEstimatedPosts(0); // Reset total posts estimation
-      // Do NOT clear scrapedImageUrls here, user wants to see and download them
+      setIsScraping(false);
+      setRemainingSeconds(0);
+      setTotalEstimatedPosts(0);
+      // Images are stored in scrapedImageUrls, available for download button
     });
 
     newSocket.on('scrape_error', (data) => {
       setCurrentStatusMessage(`Scraping Error: ${data.message}`);
-      setIsScraping(false); // Reset scraping state on error
+      setIsScraping(false);
       setRemainingSeconds(0);
       setTotalEstimatedPosts(0);
-      // Do NOT clear scrapedImageUrls here
     });
 
     newSocket.on('disconnect', (reason) => {
@@ -116,13 +108,9 @@ function App() {
         setIsSocketIdReady(false);
     });
 
-    // IMPORTANT: progress_update messages will now be ignored for currentStatusMessage
-    // as they are backend logs and not user-facing status.
+    // progress_update messages are treated as internal logs and not displayed in the UI.
     newSocket.on('progress_update', (data) => {
-      // For debugging in browser console (not shown in UI)
       console.log('Backend Progress (internal log):', data.message);
-      // If you later want to show very specific, non-verbose updates from backend here,
-      // you can add logic. But for now, these are treated as internal.
     });
 
 
@@ -130,7 +118,7 @@ function App() {
       clearInterval(idCheckInterval);
       newSocket.disconnect();
     };
-  }, []); // Empty dependency array means this runs once on mount
+  }, []);
 
   // --- useEffect for Countdown Timer ---
   useEffect(() => {
@@ -166,7 +154,6 @@ function App() {
       return;
     }
 
-    // CRITICAL CHECKS: Input and button are disabled if socket not ready
     if (!isSocketConnected || !isSocketIdReady || !socketRef.current || !socketRef.current.id) {
         setCurrentStatusMessage('Error: Not connected to backend. Please wait or refresh.');
         return;
@@ -177,10 +164,10 @@ function App() {
       return;
     }
 
-    setIsScraping(true); // Set scraping state to true
-    setCurrentStatusMessage('Initiating scrape...'); // Initial message when button is clicked
-    setTotalEstimatedPosts(0); // Reset for new scrape
-    setRemainingSeconds(0); // Reset for new scrape
+    setIsScraping(true);
+    setCurrentStatusMessage('Initiating scrape...');
+    setTotalEstimatedPosts(0);
+    setRemainingSeconds(0);
     setScrapedImageUrls([]); // Clear previously scraped images for new scrape
 
     try {
@@ -198,25 +185,36 @@ function App() {
         const errorMessage = data.error || 'Failed to start scraping (unknown error)';
         throw new Error(errorMessage);
       }
-      setCurrentStatusMessage(data.message); // Update status with initial message from backend
+      setCurrentStatusMessage(data.message);
     } catch (error) {
       setCurrentStatusMessage(`Error initiating scrape: ${error.message}`);
-      setIsScraping(false); // Reset scraping state on error
+      setIsScraping(false);
       setRemainingSeconds(0);
       setTotalEstimatedPosts(0);
     }
   };
 
-  // Function to get a clean filename from a URL for the download attribute
-  const getFilenameFromUrl = (url) => {
+  const handleDownloadAll = async () => {
+    if (!modelName) {
+      setCurrentStatusMessage('Please enter the model name first to download.');
+      return;
+    }
+    if (scrapedImageUrls.length === 0) {
+        setCurrentStatusMessage('No images were scraped for this model yet to download.');
+        return;
+    }
+    setCurrentStatusMessage(`Preparing download for ${modelName}'s content...`);
+
+    // --- IMPORTANT: This URL needs to be implemented on your backend! ---
+    // It should trigger the backend to zip up all contents for 'modelName'
+    const downloadUrl = `${BACKEND_URL}/api/download-all-model?modelName=${encodeURIComponent(modelName)}`;
+
     try {
-      const urlObj = new URL(url);
-      const pathname = urlObj.pathname;
-      const filename = pathname.substring(pathname.lastIndexOf('/') + 1);
-      // Clean up any query parameters or Cloudinary transformation suffixes
-      return filename.split('?')[0].split(',')[0] || 'download';
-    } catch (e) {
-      return 'download'; // Fallback filename
+        // We'll let the browser handle the download directly from the backend
+        window.open(downloadUrl, '_blank');
+        setCurrentStatusMessage(`Download initiated for ${modelName}. Check your browser's downloads.`);
+    } catch (error) {
+        setCurrentStatusMessage(`Failed to initiate download: ${error.message}`);
     }
   };
 
@@ -265,11 +263,10 @@ function App() {
           </button>
         </div>
 
-        {/* --- Events/Status Section (Streamlined) --- */}
+        {/* --- Events/Status Section --- */}
         <div style={styles.statusContainer}>
-          <p style={styles.statusMessage}>{currentStatusMessage}</p> {/* Main status message */}
+          <p style={styles.statusMessage}>{currentStatusMessage}</p>
 
-          {/* Conditional display for estimated time and progress bar */}
           {isScraping && (
             <>
               {totalEstimatedPosts > 0 && remainingSeconds > 0 && (
@@ -289,10 +286,8 @@ function App() {
                   <div style={{ ...styles.progressBarFill, width: `${(totalEstimatedPosts * 3 - remainingSeconds) / (totalEstimatedPosts * 3) * 100}%` }}></div>
                 </div>
               )}
-              {/* Removed the confusing "Please check your download folder" message */}
             </>
           )}
-          {/* Display a clear message after scrape complete/error if not actively scraping */}
           {!isScraping && (currentStatusMessage.includes("Complete") || currentStatusMessage.includes("Error")) && (
             <p style={{ fontSize: '0.85em', color: currentStatusMessage.includes("Error") ? 'red' : 'green', marginTop: '5px' }}>
               {currentStatusMessage.includes("Complete") ? 'Scraping session finished!' : 'Scraping session ended with an error.'}
@@ -301,39 +296,18 @@ function App() {
         </div>
         {/* --- END Events/Status Section --- */}
 
-        <h2>Scraped Images</h2>
-        <div style={styles.imageGridContainer}>
-          {scrapedImageUrls.length === 0 && <p>No images scraped yet.</p>}
-          {scrapedImageUrls.map((image, index) => (
-            <div key={index} style={styles.scrapedImageItem}>
-              <a
-                href={image.imageUrl}
-                download={getFilenameFromUrl(image.imageUrl)}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={styles.imageLink}
-              >
-                <img
-                  src={image.imageUrl}
-                  alt={`Scraped Image ${index}`}
-                  style={styles.scrapedImage}
-                />
-                <button style={styles.downloadButton}>
-                  Download
-                </button>
-              </a>
-            </div>
-          ))}
-        </div>
-
-        {/* Optional: "Download All" button */}
-        {/*
-        {isScraping === false && scrapedImageUrls.length > 0 && (
-            <button style={{ padding: '10px 15px', backgroundColor: '#6c757d', color: 'white', border: 'none', cursor: 'pointer', marginTop: '20px' }}>
-                Download All Scraped Images (ZIP)
+        {/* --- Download All Button --- */}
+        {!isScraping && scrapedImageUrls.length > 0 && (
+            <button
+                onClick={handleDownloadAll}
+                style={{ ...styles.searchButton, marginTop: '30px', backgroundColor: '#28a745', padding: '12px 25px' }}
+                disabled={!modelName || scrapedImageUrls.length === 0 || isScraping}
+            >
+                Download All Scraped Content ({scrapedImageUrls.length} files)
             </button>
         )}
-        */}
+        {/* --- END Download All Button --- */}
+
       </div>
     </div>
   );
@@ -534,47 +508,6 @@ const styles = {
     backgroundColor: '#007bff',
     borderRadius: '5px',
     transition: 'width 0.5s ease-in-out',
-  },
-  imageGridContainer: {
-    display: 'flex',
-    flexWrap: 'wrap',
-    gap: '10px',
-    border: '1px solid #eee',
-    padding: '10px',
-    minHeight: '100px',
-    marginTop: '15px',
-  },
-  scrapedImageItem: {
-    border: '1px solid #ddd',
-    padding: '5px',
-    borderRadius: '5px',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-  },
-  imageLink: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    textDecoration: 'none',
-    color: 'inherit',
-  },
-  scrapedImage: {
-    width: '150px',
-    height: '150px',
-    objectFit: 'cover',
-    borderRadius: '3px',
-  },
-  downloadButton: {
-    marginTop: '5px',
-    padding: '8px 12px',
-    backgroundColor: '#28a745',
-    color: 'white',
-    border: 'none',
-    borderRadius: '3px',
-    cursor: 'pointer',
-    transition: 'background-color 0.2s ease',
   },
 };
 
