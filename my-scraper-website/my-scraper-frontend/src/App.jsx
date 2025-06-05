@@ -19,6 +19,17 @@ function App() {
   const socketRef = useRef(null);
   const messagesEndRef = useRef(null); // For auto-scrolling status messages
 
+  // New state for "Coming soon" popup (from your original code)
+  const [showComingSoon, setShowComingSoon] = useState(false); 
+
+  // Function to handle "OnlyChat" button click (from your original code)
+  const handleOnlyChatClick = () => {
+    setShowComingSoon(true);
+    setTimeout(() => {
+      setShowComingSoon(false);
+    }, 2000); // Disappear after 2 seconds
+  };
+
   useEffect(() => {
     // --- SOCKET.IO CONNECTION ---
     // Ensure the socket connects to your backend URL
@@ -144,45 +155,45 @@ function App() {
 
 
   return (
-    <div style={styles.body}> {/* Applied styles.body */}
-      <div style={styles.headerContainer}> {/* Applied styles.headerContainer */}
-        <div style={styles.logo}>OnlyPropellers</div> {/* Applied styles.logo */}
+    <div style={styles.body}>
+      <div style={styles.headerContainer}>
+        <div style={styles.logo}>OnlyPropellers</div>
         {/* Wrap the button and popup in a div that is positioned relative */}
-        <div style={styles.buttonWrapper}> {/* Applied styles.buttonWrapper */}
-          <button style={styles.addButton} onClick={handleOnlyChatClick}>OnlyChat</button> {/* Applied styles.addButton */}
+        <div style={styles.buttonWrapper}>
+          <button style={styles.addButton} onClick={handleOnlyChatClick}>OnlyChat</button>
           {showComingSoon && (
-            <div style={styles.comingSoonPopup}> {/* Applied styles.comingSoonPopup */}
+            <div style={styles.comingSoonPopup}>
               Coming soon
             </div>
           )}
         </div>
       </div>
 
-      <div style={styles.mainContent}> {/* Applied styles.mainContent */}
-        <h1 style={styles.title}> {/* Applied styles.title */}
+      <div style={styles.mainContent}>
+        <h1 style={styles.title}>
           Hack{' '}
-          <span style={styles.onlyfansLogo}> {/* Applied styles.onlyfansLogo */}
-            <span style={styles.lockIcon}>&#128274;</span> {/* Applied styles.lockIcon */}
-            Only<span style={styles.fansText}>Fans</span> {/* Applied styles.fansText */}
+          <span style={styles.onlyfansLogo}>
+            <span style={styles.lockIcon}>&#128274;</span>
+            Only<span style={styles.fansText}>Fans</span>
           </span>{' '}
           Profiles
         </h1>
-        <p style={styles.subtitle}>Get latest posts of any OnlyFans model for free </p> {/* Applied styles.subtitle */}
+        <p style={styles.subtitle}>Get latest posts of any OnlyFans model for free </p>
 
-        <div style={styles.searchBarContainer}> {/* Applied styles.searchBarContainer */}
-          <span style={styles.searchIcon}>&#128269;</span> {/* Applied styles.searchIcon */}
+        <div style={styles.searchBarContainer}>
+          <span style={styles.searchIcon}>&#128269;</span>
           <input
             type="text"
             placeholder="Username of model..."
             value={modelName}
             onChange={(e) => setModelName(e.target.value)}
-            style={styles.searchInput} {/* Applied styles.searchInput */}
+            style={styles.searchInput}
             // DISABLED IF SCRAPING, NOT CONNECTED, OR SOCKET ID IS NOT READY (Add logic back if needed)
             // disabled={isScraping || !isSocketConnected || !isSocketIdReady}
           />
           <button
             onClick={startScrape}
-            style={styles.searchButton} {/* Applied styles.searchButton */}
+            style={styles.searchButton}
             // DISABLED IF SCRAPING, NOT CONNECTED, OR SOCKET ID IS NOT READY (Add logic back if needed)
             // style={(isScraping || !isSocketConnected || !isSocketIdReady) ? { ...styles.searchButton, ...styles.searchButtonDisabled } : styles.searchButton}
             // disabled={isScraping || !isSocketConnected || !isSocketIdReady}
@@ -191,32 +202,32 @@ function App() {
           </button>
         </div>
 
-        {estimatedTimeMessage && <p style={{ fontStyle: 'italic', color: '#666' }}>{estimatedTimeMessage}</p>} {/* Inline style kept as it's conditional/minor */}
+        {estimatedTimeMessage && <p style={{ fontStyle: 'italic', color: '#666' }}>{estimatedTimeMessage}</p>}
 
-        <div style={styles.statusContainer}> {/* Applied styles.statusContainer */}
-          <p style={styles.statusMessage}>{status}</p> {/* Applied styles.statusMessage */}
+        <div style={styles.statusContainer}>
+          <p style={styles.statusMessage}>{status}</p>
           <div ref={messagesEndRef} /> {/* For auto-scrolling */}
         </div>
 
         <h2>Scraped Images</h2>
-        <div style={styles.imageGridContainer}> {/* Applied styles.imageGridContainer (new style below) */}
+        <div style={styles.imageGridContainer}>
           {scrapedImages.length === 0 && <p>No images scraped yet.</p>}
           {scrapedImages.map((image, index) => (
-            <div key={index} style={styles.scrapedImageItem}> {/* Applied styles.scrapedImageItem (new style below) */}
+            <div key={index} style={styles.scrapedImageItem}>
               {/* Download Link Wrapper */}
               <a
                 href={image.imageUrl}
                 download={getFilenameFromUrl(image.imageUrl)} // Suggest a filename for download
                 target="_blank" // Opens in new tab
                 rel="noopener noreferrer" // Security best practice
-                style={styles.imageLink} {/* Applied styles.imageLink (new style below) */}
+                style={styles.imageLink}
               >
                 <img
                   src={image.imageUrl}
                   alt={`Scraped Image ${index}`}
-                  style={styles.scrapedImage} {/* Applied styles.scrapedImage */}
+                  style={styles.scrapedImage}
                 />
-                <button style={styles.downloadButton}> {/* Applied styles.downloadButton (new style below) */}
+                <button style={styles.downloadButton}>
                   Download
                 </button>
               </a>
