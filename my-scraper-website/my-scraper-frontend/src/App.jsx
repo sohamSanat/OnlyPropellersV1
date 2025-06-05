@@ -3,7 +3,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
-<<<<<<< HEAD
 // src/App.jsx
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -15,11 +14,6 @@ import io from 'socket.io-client';
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 // --- END OF REQUIRED CODE CHANGE FOR BACKEND URL ---
 
-=======
-// This will use the VITE_BACKEND_URL environment variable you set on Render.
-// During local development, it will fall back to 'http://localhost:3000'.
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
->>>>>>> f27474f4844d00dac86e562ebceaca7cd8a961c6
 
 function App() {
   const [modelName, setModelName] = useState('');
