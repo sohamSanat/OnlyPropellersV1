@@ -1,4 +1,5 @@
-// ... (existing imports)
+// src/App.jsx
+
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
@@ -13,7 +14,7 @@ function App() {
   const [status, setStatus] = useState('Enter a model name to start scraping.');
   const [scrapedImages, setScrapedImages] = useState([]);
   const [scrapeComplete, setScrapeComplete] = useState(false); // New state to track completion
-  const [progress, setProgress] = useState(0); // For total estimated posts
+  const [progress, setProgress] = useState(0); // For total estimated posts (not fully integrated yet)
   const [estimatedTimeMessage, setEstimatedTimeMessage] = useState(''); // For estimated time
   const socketRef = useRef(null);
   const messagesEndRef = useRef(null); // For auto-scrolling status messages
@@ -41,7 +42,7 @@ function App() {
         }
         return statusLines.join('\n') + `\n${newMessage}`;
       });
-      // Optionally, you might update a progress bar here if you have one
+      // Optionally, you might update a progress bar here if you have one (using 'progress' state)
     });
 
     socketRef.current.on('image_scraped', (data) => {
@@ -143,67 +144,95 @@ function App() {
 
 
   return (
-    <div style={{ padding: '20px', maxWidth: '800px', margin: 'auto', fontFamily: 'Arial, sans-serif' }}>
-      <h1>OnlyFans Scraper (Coomer.su)</h1>
-      <p style={{ color: '#555' }}>
-        Enter an OnlyFans model's username from Coomer.su to begin scraping.
-        (e.g., `sophieraiin` or `stella_moon`)
-      </p>
-
-      <div style={{ marginBottom: '20px' }}>
-        <input
-          type="text"
-          value={modelName}
-          onChange={(e) => setModelName(e.target.value)}
-          placeholder="Enter model username"
-          style={{ padding: '10px', marginRight: '10px', width: '200px' }}
-        />
-        <button onClick={startScrape} style={{ padding: '10px 15px', backgroundColor: '#007bff', color: 'white', border: 'none', cursor: 'pointer' }}>
-          Hack
-        </button>
+    <div style={styles.body}> {/* Applied styles.body */}
+      <div style={styles.headerContainer}> {/* Applied styles.headerContainer */}
+        <div style={styles.logo}>OnlyPropellers</div> {/* Applied styles.logo */}
+        {/* Wrap the button and popup in a div that is positioned relative */}
+        <div style={styles.buttonWrapper}> {/* Applied styles.buttonWrapper */}
+          <button style={styles.addButton} onClick={handleOnlyChatClick}>OnlyChat</button> {/* Applied styles.addButton */}
+          {showComingSoon && (
+            <div style={styles.comingSoonPopup}> {/* Applied styles.comingSoonPopup */}
+              Coming soon
+            </div>
+          )}
+        </div>
       </div>
 
-      {estimatedTimeMessage && <p style={{ fontStyle: 'italic', color: '#666' }}>{estimatedTimeMessage}</p>}
+      <div style={styles.mainContent}> {/* Applied styles.mainContent */}
+        <h1 style={styles.title}> {/* Applied styles.title */}
+          Hack{' '}
+          <span style={styles.onlyfansLogo}> {/* Applied styles.onlyfansLogo */}
+            <span style={styles.lockIcon}>&#128274;</span> {/* Applied styles.lockIcon */}
+            Only<span style={styles.fansText}>Fans</span> {/* Applied styles.fansText */}
+          </span>{' '}
+          Profiles
+        </h1>
+        <p style={styles.subtitle}>Get latest posts of any OnlyFans model for free </p> {/* Applied styles.subtitle */}
 
-      <div style={{ border: '1px solid #ccc', padding: '15px', minHeight: '150px', maxHeight: '300px', overflowY: 'scroll', backgroundColor: '#f9f9f9', whiteSpace: 'pre-wrap', marginBottom: '20px' }}>
-        <p style={{ margin: 0 }}>{status}</p>
-        <div ref={messagesEndRef} /> {/* For auto-scrolling */}
-      </div>
-
-      <h2>Scraped Images</h2>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', border: '1px solid #eee', padding: '10px', minHeight: '100px' }}>
-        {scrapedImages.length === 0 && <p>No images scraped yet.</p>}
-        {scrapedImages.map((image, index) => (
-          <div key={index} style={{ border: '1px solid #ddd', padding: '5px', borderRadius: '5px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            {/* Download Link Wrapper */}
-            <a
-              href={image.imageUrl}
-              download={getFilenameFromUrl(image.imageUrl)} // Suggest a filename for download
-              target="_blank" // Opens in new tab
-              rel="noopener noreferrer" // Security best practice
-              style={{ textDecoration: 'none', color: 'inherit' }}
-            >
-              <img
-                src={image.imageUrl}
-                alt={`Scraped Image ${index}`}
-                style={{ width: '150px', height: '150px', objectFit: 'cover', borderRadius: '3px' }}
-              />
-              <button style={{ marginTop: '5px', padding: '8px 12px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>
-                Download
-              </button>
-            </a>
-          </div>
-        ))}
-      </div>
-
-      {/* You can add a "Download All" button here, if you implement the backend ZIP logic */}
-      {/*
-      {scrapeComplete && scrapedImages.length > 0 && (
-          <button style={{ padding: '10px 15px', backgroundColor: '#6c757d', color: 'white', border: 'none', cursor: 'pointer', marginTop: '20px' }}>
-              Download All Scraped Images (ZIP)
+        <div style={styles.searchBarContainer}> {/* Applied styles.searchBarContainer */}
+          <span style={styles.searchIcon}>&#128269;</span> {/* Applied styles.searchIcon */}
+          <input
+            type="text"
+            placeholder="Username of model..."
+            value={modelName}
+            onChange={(e) => setModelName(e.target.value)}
+            style={styles.searchInput} {/* Applied styles.searchInput */}
+            // DISABLED IF SCRAPING, NOT CONNECTED, OR SOCKET ID IS NOT READY (Add logic back if needed)
+            // disabled={isScraping || !isSocketConnected || !isSocketIdReady}
+          />
+          <button
+            onClick={startScrape}
+            style={styles.searchButton} {/* Applied styles.searchButton */}
+            // DISABLED IF SCRAPING, NOT CONNECTED, OR SOCKET ID IS NOT READY (Add logic back if needed)
+            // style={(isScraping || !isSocketConnected || !isSocketIdReady) ? { ...styles.searchButton, ...styles.searchButtonDisabled } : styles.searchButton}
+            // disabled={isScraping || !isSocketConnected || !isSocketIdReady}
+          >
+            Hack
           </button>
-      )}
-      */}
+        </div>
+
+        {estimatedTimeMessage && <p style={{ fontStyle: 'italic', color: '#666' }}>{estimatedTimeMessage}</p>} {/* Inline style kept as it's conditional/minor */}
+
+        <div style={styles.statusContainer}> {/* Applied styles.statusContainer */}
+          <p style={styles.statusMessage}>{status}</p> {/* Applied styles.statusMessage */}
+          <div ref={messagesEndRef} /> {/* For auto-scrolling */}
+        </div>
+
+        <h2>Scraped Images</h2>
+        <div style={styles.imageGridContainer}> {/* Applied styles.imageGridContainer (new style below) */}
+          {scrapedImages.length === 0 && <p>No images scraped yet.</p>}
+          {scrapedImages.map((image, index) => (
+            <div key={index} style={styles.scrapedImageItem}> {/* Applied styles.scrapedImageItem (new style below) */}
+              {/* Download Link Wrapper */}
+              <a
+                href={image.imageUrl}
+                download={getFilenameFromUrl(image.imageUrl)} // Suggest a filename for download
+                target="_blank" // Opens in new tab
+                rel="noopener noreferrer" // Security best practice
+                style={styles.imageLink} {/* Applied styles.imageLink (new style below) */}
+              >
+                <img
+                  src={image.imageUrl}
+                  alt={`Scraped Image ${index}`}
+                  style={styles.scrapedImage} {/* Applied styles.scrapedImage */}
+                />
+                <button style={styles.downloadButton}> {/* Applied styles.downloadButton (new style below) */}
+                  Download
+                </button>
+              </a>
+            </div>
+          ))}
+        </div>
+
+        {/* You can add a "Download All" button here, if you implement the backend ZIP logic */}
+        {/*
+        {scrapeComplete && scrapedImages.length > 0 && (
+            <button style={{ padding: '10px 15px', backgroundColor: '#6c757d', color: 'white', border: 'none', cursor: 'pointer', marginTop: '20px' }}>
+                Download All Scraped Images (ZIP)
+            </button>
+        )}
+        */}
+      </div>
     </div>
   );
 }
@@ -236,10 +265,9 @@ const styles = {
     fontWeight: 'bold',
     color: '#007bff',
   },
-  // NEW STYLE: Wrapper for the button and popup
   buttonWrapper: {
-    position: 'relative', // This is the key! Make the wrapper relative.
-    display: 'inline-block', // To make it wrap its content
+    position: 'relative',
+    display: 'inline-block',
   },
   addButton: {
     backgroundColor: '#007bff',
@@ -252,11 +280,10 @@ const styles = {
     fontWeight: 'bold',
     boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
     transition: 'background-color 0.2s ease',
-    // position: 'relative', // Removed from here, moved to buttonWrapper
   },
   comingSoonPopup: {
     position: 'absolute',
-    top: 'calc(100% + 10px)', // Position below the button
+    top: 'calc(100% + 10px)',
     left: '50%',
     transform: 'translateX(-50%)',
     backgroundColor: '#333',
@@ -348,7 +375,7 @@ const styles = {
     boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
     transition: 'background-color 0.2s ease',
   },
-  searchButtonDisabled: {
+  searchButtonDisabled: { // Keeping this just in case you want to re-add disabled logic
     backgroundColor: '#a0a0a0',
     cursor: 'not-allowed',
     boxShadow: 'none',
@@ -405,6 +432,48 @@ const styles = {
     backgroundColor: '#007bff',
     borderRadius: '5px',
     transition: 'width 0.5s ease-in-out',
+  },
+  // --- NEW STYLES FOR SCRAPED IMAGES SECTION ---
+  imageGridContainer: { // Renamed from 'imageGrid' for clarity
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: '10px',
+    border: '1px solid #eee', // Changed from #ddd
+    padding: '10px',
+    minHeight: '100px',
+    marginTop: '15px', // Added some margin
+  },
+  scrapedImageItem: {
+    border: '1px solid #ddd',
+    padding: '5px',
+    borderRadius: '5px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.05)', // Subtle shadow
+  },
+  imageLink: { // Style for the <a> tag wrapping image and button
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    textDecoration: 'none', // Remove underline
+    color: 'inherit', // Inherit text color
+  },
+  scrapedImage: {
+    width: '150px',
+    height: '150px',
+    objectFit: 'cover',
+    borderRadius: '3px',
+  },
+  downloadButton: {
+    marginTop: '5px',
+    padding: '8px 12px',
+    backgroundColor: '#28a745', // Green for download
+    color: 'white',
+    border: 'none',
+    borderRadius: '3px',
+    cursor: 'pointer',
+    transition: 'background-color 0.2s ease',
   },
 };
 
