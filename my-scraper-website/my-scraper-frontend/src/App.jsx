@@ -3,16 +3,13 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
-// --- REQUIRED CODE CHANGE FOR BACKEND URL ---
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
-// --- END REQUIRED CODE CHANGE ---
 
 
 function App() {
   const [modelName, setModelName] = useState('');
   const [currentStatusMessage, setCurrentStatusMessage] = useState('Initializing...');
   const [isScraping, setIsScraping] = useState(false);
-  // Keeping scrapedImageUrls state to know if content was found for "Download All" button logic
   const [scrapedImageUrls, setScrapedImageUrls] = useState([]);
   const [totalEstimatedPosts, setTotalEstimatedPosts] = useState(0);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
@@ -23,12 +20,13 @@ function App() {
   const [showComingSoon, setShowComingSoon] = useState(false);
 
 
-  // --- useEffect for Socket.IO connection and real-time data ---
   useEffect(() => {
+    console.log('App.jsx: Setting up Socket.IO connection...'); // Debugging
     const newSocket = io(BACKEND_URL);
     socketRef.current = newSocket;
 
     newSocket.on('connect', () => {
+      console.log('Socket.IO Event: CONNECTED!'); // Debugging
       setIsSocketConnected(true);
       if (newSocket.id) {
           setIsSocketIdReady(true);
@@ -40,40 +38,44 @@ function App() {
 
     const idCheckInterval = setInterval(() => {
         if (socketRef.current && socketRef.current.id && !isSocketIdReady) {
+            console.log('Socket.IO Deferred Check: ID became available:', socketRef.current.id); // Debugging
             setIsSocketIdReady(true);
             setCurrentStatusMessage('Ready to scrape. Enter a model name.');
         }
     }, 500);
 
     newSocket.on('estimated_time_info', (data) => {
+      console.log('Socket.IO Event: Received estimated time info:', data); // Debugging
       setTotalEstimatedPosts(data.totalEstimatedPosts);
       setRemainingSeconds(data.totalEstimatedPosts * 3);
       if (isScraping) {
-          setCurrentStatusMessage('Estimating total posts...');
+          setCurrentStatusMessage(`Estimated ${data.totalEstimatedPosts} posts. Starting scrape.`);
       }
     });
 
     newSocket.on('image_scraped', (data) => {
-      // Still store the URLs, even if not displayed, to know what to download later
+      console.log('Socket.IO Event: Received scraped image URL:', data.imageUrl); // Debugging
       setScrapedImageUrls(prevUrls => {
         if (!prevUrls.some(img => img.imageUrl === data.imageUrl)) {
+            const updatedCount = prevUrls.length + 1;
+            setCurrentStatusMessage(`Scraping... Processed ${updatedCount} images.`);
             return [...prevUrls, data];
         }
         return prevUrls;
       });
-      setCurrentStatusMessage(`Scraping and Uploading... (${scrapedImageUrls.length + 1} images processed)`);
     });
 
 
     newSocket.on('scrape_complete', (data) => {
-      setCurrentStatusMessage(`Scraping Complete: ${data.message}`);
+      console.log('Socket.IO Event: SCRAPE COMPLETE:', data.message); // Debugging - CRUCIAL CONFIRMATION
+      setCurrentStatusMessage(`Scraping Completed! Total posts processed: ${scrapedImageUrls.length}.`);
       setIsScraping(false);
       setRemainingSeconds(0);
       setTotalEstimatedPosts(0);
-      // Images are stored in scrapedImageUrls, available for download button
     });
 
     newSocket.on('scrape_error', (data) => {
+      console.error('Socket.IO Event: SCRAPE ERROR:', data.message); // Debugging
       setCurrentStatusMessage(`Scraping Error: ${data.message}`);
       setIsScraping(false);
       setRemainingSeconds(0);
@@ -81,16 +83,18 @@ function App() {
     });
 
     newSocket.on('disconnect', (reason) => {
+      console.log('Socket.IO Event: DISCONNECTED! Reason:', reason); // Debugging
       setIsSocketConnected(false);
       setIsSocketIdReady(false);
       setCurrentStatusMessage('Disconnected. Please refresh if issues persist.');
       setIsScraping(false);
       setRemainingSeconds(0);
       setTotalEstimatedPosts(0);
-      setScrapedImageUrls([]); // Clear images on full disconnect
+      setScrapedImageUrls([]);
     });
 
     newSocket.on('reconnect', (attemptNumber) => {
+        console.log(`Socket.IO Event: Reconnected after ${attemptNumber} attempts`); // Debugging
         setIsSocketConnected(true);
         if (newSocket.id) {
             setIsSocketIdReady(true);
@@ -99,17 +103,19 @@ function App() {
     });
 
     newSocket.on('reconnect_error', (error) => {
+        console.error('Socket.IO Event: Reconnect error:', error); // Debugging
         setCurrentStatusMessage('Reconnect error. Check backend.');
     });
 
     newSocket.on('connect_error', (error) => {
+        console.error('Socket.IO Event: Initial connection error:', error); // Debugging
         setCurrentStatusMessage(`Connection error: ${error.message}. Please refresh.`);
         setIsSocketConnected(false);
         setIsSocketIdReady(false);
     });
 
-    // progress_update messages are treated as internal logs and not displayed in the UI.
     newSocket.on('progress_update', (data) => {
+      // These are backend internal logs, not for main UI status display
       console.log('Backend Progress (internal log):', data.message);
     });
 
@@ -118,9 +124,9 @@ function App() {
       clearInterval(idCheckInterval);
       newSocket.disconnect();
     };
-  }, []);
+  }, [scrapedImageUrls.length]); // Added scrapedImageUrls.length to dependencies for accurate processed count
 
-  // --- useEffect for Countdown Timer ---
+
   useEffect(() => {
     let timerId;
     if (isScraping && totalEstimatedPosts > 0 && remainingSeconds > 0) {
@@ -200,7 +206,7 @@ function App() {
       return;
     }
     if (scrapedImageUrls.length === 0) {
-        setCurrentStatusMessage('No images were scraped for this model yet to download.');
+        setCurrentStatusMessage('No content was scraped for this model yet to download.');
         return;
     }
     setCurrentStatusMessage(`Preparing download for ${modelName}'s content...`);
@@ -267,7 +273,7 @@ function App() {
         <div style={styles.statusContainer}>
           <p style={styles.statusMessage}>{currentStatusMessage}</p>
 
-          {isScraping && (
+          {isScraping && (totalEstimatedPosts > 0 || remainingSeconds > 0) && ( // Show these if scraping AND estimation has happened
             <>
               {totalEstimatedPosts > 0 && remainingSeconds > 0 && (
                 <div style={styles.countdownDisplay}>
@@ -288,6 +294,7 @@ function App() {
               )}
             </>
           )}
+          {/* Display a clear message after scrape complete/error if not actively scraping */}
           {!isScraping && (currentStatusMessage.includes("Complete") || currentStatusMessage.includes("Error")) && (
             <p style={{ fontSize: '0.85em', color: currentStatusMessage.includes("Error") ? 'red' : 'green', marginTop: '5px' }}>
               {currentStatusMessage.includes("Complete") ? 'Scraping session finished!' : 'Scraping session ended with an error.'}
@@ -297,7 +304,7 @@ function App() {
         {/* --- END Events/Status Section --- */}
 
         {/* --- Download All Button --- */}
-        {!isScraping && scrapedImageUrls.length > 0 && (
+        {!isScraping && scrapedImageUrls.length > 0 && ( // Show only when not scraping and content was found
             <button
                 onClick={handleDownloadAll}
                 style={{ ...styles.searchButton, marginTop: '30px', backgroundColor: '#28a745', padding: '12px 25px' }}
