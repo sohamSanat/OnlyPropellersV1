@@ -3,11 +3,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 
-// src/App.jsx
-
-import React, { useState, useEffect, useRef } from 'react';
-import io from 'socket.io-client';
-
 // --- REQUIRED CODE CHANGE FOR BACKEND URL ---
 // This will use the VITE_BACKEND_URL environment variable you set on Render.
 // During local development, it will fall back to 'http://localhost:3000'.
