@@ -40,7 +40,7 @@ function App() {
         if (socketRef.current && socketRef.current.id && !isSocketIdReady) {
             console.log('Socket.IO Deferred Check: ID became available:', socketRef.current.id); // Debugging
             setIsSocketIdReady(true);
-            setCurrentStatusMessage('Ready to scrape. Enter a model name.');
+            setCurrentStatusMessage('Please wait couple of seconds for download to start..');
         }
     }, 500);
 
