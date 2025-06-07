@@ -1,53 +1,71 @@
 // scraper.js
 const puppeteer = require('puppeteer');
-const config = require('./config/config'); // Ensure config.js is accessible
+const config = require('./config/config');
 
 
 async function scrapePostLinks(page, url) {
+    console.log(`[Scraper Debug] scrapePostLinks: Navigating to ${url}`); // Debugging
     try {
-        await page.goto(url, { waitUntil: 'domcontentloaded' });
-        // Add a small delay after navigation, sometimes useful for dynamic content
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await page.waitForSelector('.card-list__items', { timeout: 60000 });
+        // Change to 'networkidle2' for more robust page loading, waiting for network to be quiet
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 }); // Increased timeout to 90 seconds
+        console.log(`[Scraper Debug] scrapePostLinks: Page loaded for ${url}.`); // Debugging
 
-        const postLinks = await page.$$eval('.card-list__items article.post-card.post-card--preview a[href*="/post/"]', (links) =>
-            links.map((link) => link.href)
-        );
+        // Add a slightly longer delay after navigation before checking selector
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Increased from 500ms to 1500ms
+
+        // Wait for the main content wrapper
+        await page.waitForSelector('.card-list__items', { timeout: 60000 }); // Still 60s for selector
+        console.log(`[Scraper Debug] scrapePostLinks: .card-list__items selector found.`); // Debugging
+
+        const postLinks = await page.$$eval('.card-list__items article.post-card.post-card--preview a[href*="/post/"]', (links) => {
+            const extractedLinks = links.map((link) => link.href);
+            console.log(`[Page Evaluate] Found ${extractedLinks.length} potential post links.`); // This logs in Puppeteer's console
+            return extractedLinks;
+        });
+
+        console.log(`[Scraper Debug] scrapePostLinks: Extracted ${postLinks.length} post links from ${url}`); // Debugging
         return postLinks;
     } catch (error) {
-        console.error(`Error scraping post links from ${url}:`, error);
-        return null;
+        console.error(`[Scraper Error] scrapePostLinks: Error scraping ${url}:`, error.message); // More detailed error
+        return null; // Return null on error to indicate failure
     }
 }
 
 
 async function scrapeImagesFromPost(page, postUrl) {
-    await page.goto(postUrl, { waitUntil: 'networkidle2' });
-    // Add a small delay after navigation
-    await new Promise(resolve => setTimeout(resolve, 500));
+    console.log(`[Scraper Debug] scrapeImagesFromPost: Navigating to post ${postUrl}`); // Debugging
+    try {
+        await page.goto(postUrl, { waitUntil: 'networkidle2', timeout: 90000 }); // Increased timeout
+        await new Promise(resolve => setTimeout(resolve, 1500)); // Increased delay
 
-    const imageUrls = await page.$$eval('img', (imgs) => {
-        return imgs.filter(img => {
-            // Check if the image source is valid and not an SVG
-            if (!img.src || img.src.endsWith('.svg')) {
-                return false;
-            }
-
-            // Check if any ancestor is a <header> tag with class "post__header"
-            let currentElement = img;
-            while (currentElement) {
-                // Ensure currentElement is an HTMLElement before checking tagName and classList
-                if (currentElement.nodeType === Node.ELEMENT_NODE &&
-                    currentElement.tagName === 'HEADER' &&
-                    currentElement.classList.contains('post__header')) {
-                    return false; // Exclude this image because it's inside a post__header
+        const imageUrls = await page.$$eval('img', (imgs) => {
+            const filteredUrls = imgs.filter(img => {
+                if (!img.src || img.src.endsWith('.svg')) {
+                    return false;
                 }
-                currentElement = currentElement.parentElement;
-            }
-            return true; // Include this image
-        }).map(img => img.src);
-    });
-    return imageUrls;
+
+                let currentElement = img;
+                while (currentElement) {
+                    if (currentElement.nodeType === Node.ELEMENT_NODE &&
+                        currentElement.tagName === 'HEADER' &&
+                        currentElement.classList.contains('post__header')) {
+                        return false;
+                    }
+                    currentElement = currentElement.parentElement;
+                }
+                return true;
+            }).map(img => img.src);
+            console.log(`[Page Evaluate] Found ${filteredUrls.length} image/video URLs in post.`); // Logs in Puppeteer's console
+            return filteredUrls;
+        });
+
+        console.log(`[Scraper Debug] scrapeImagesFromPost: Extracted ${imageUrls.length} image/video URLs from ${postUrl}`); // Debugging
+        return imageUrls;
+    } catch (error) {
+        console.error(`[Scraper Error] scrapeImagesFromPost: Error scraping images from ${postUrl}:`, error.message); // More detailed error
+        // If an error occurs here, return an empty array so master.js doesn't break due to null/undefined
+        return [];
+    }
 }
 
 module.exports = { scrapePostLinks, scrapeImagesFromPost };

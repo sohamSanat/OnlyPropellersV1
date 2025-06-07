@@ -43,7 +43,7 @@ function App() {
         if (socketRef.current && socketRef.current.id && !isSocketIdReady) {
             console.log('[Frontend Debug] Socket.IO Deferred Check: ID became available:', socketRef.current.id); // Debugging
             setIsSocketIdReady(true);
-            setCurrentStatusMessage('Ready to scrape. Enter a model name.');
+            setCurrentStatusMessage('Please wait patently for download to start.');
         }
     }, 500);
 
