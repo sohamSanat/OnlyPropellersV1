@@ -6,22 +6,19 @@ const config = require('./config/config'); // Ensure config.js is in the parent 
 const axios = require('axios'); // ADD THIS LINE for downloading images
 const cloudinary = require('./cloudinaryConfig'); // ADD THIS LINE for Cloudinary config
 
-async function checkNumberOfPages(ofModel, io) {
+// Function to check number of pages/total estimated posts
+async function checkNumberOfPages(ofModel, io) { // 'io' is clientSocket
     io.emit('progress_update', { message: 'Starting to check approximate total posts for the model...' });
-    // Use headless: 'new' for the latest headless mode
-    // Add args for better compatibility in server environments
     const browser = await puppeteer.launch({
-        headless: 'new',
+        headless: 'new', // Use 'new' for the latest headless mode
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage', // Recommended for Docker/server environments
-            '--disable-accelerated-video-decode',
-            '--no-zygote',
-            '--single-process' // Often helps with memory and stability in constrained environments
+            '' // No more specific puppeteer args here to avoid conflicts if you had them
         ]
     });
     const page = await browser.newPage();
+    page.setDefaultNavigationTimeout(60000); // 60 seconds timeout for navigation
 
     page.on('console', msg => {
         console.log(`PUPPETEER PAGE LOG: ${msg.text()}`);
@@ -90,7 +87,8 @@ async function checkNumberOfPages(ofModel, io) {
     }
 }
 
-async function runMasterScript(ofModel, io) {
+// Main function to run the scraping process
+async function runMasterScript(ofModel, io) { // 'io' here is clientSocket
     if (!ofModel) {
         io.emit('progress_update', { type: 'error', message: 'Model username is required for scraping.' });
         return;
@@ -99,50 +97,55 @@ async function runMasterScript(ofModel, io) {
     io.emit('progress_update', { message: `Starting scraping for OF Model: ${ofModel}` });
 
     const totalEstimatedPosts = await checkNumberOfPages(ofModel, io);
-    // --- NEW LOG FOR DEBUGGING ---
     console.log(`DEBUG: Total estimated posts returned by checkNumberOfPages: ${totalEstimatedPosts}`);
     io.emit('progress_update', { message: `Estimated total posts for ${ofModel}: ${totalEstimatedPosts}` });
 
-    // --- Emit estimated_time_info to frontend ---
     io.emit('estimated_time_info', { totalEstimatedPosts: totalEstimatedPosts });
 
     let totalScrapedCount = 0;
-    const CHUNK_SIZE = 100; // Represents the chunk size handled by a single call to index.js
 
-    while (totalScrapedCount < totalEstimatedPosts) {
+    // --- REVISED LOOP TERMINATION LOGIC ---
+    while (true) { // Loop indefinitely until an explicit break condition is met
         const currentStartOffset = totalScrapedCount;
 
         io.emit('progress_update', { message: `\n--- Starting scraping for chunk at offset: ?o=${currentStartOffset} ---` });
         io.emit('progress_update', { message: `Total posts scraped so far: ${totalScrapedCount}` });
 
-        // --- IMPORTANT: Pass the 'io' object, cloudinary, and axios to the 'main' (index.js) function ---
-        const postsScrapedInThisChunk = await main(ofModel, currentStartOffset, io, cloudinary, axios); // ADD cloudinary and axios here
+        // Call index.js to scrape a chunk (up to 100 posts per call)
+        const postsScrapedInThisChunk = await main(ofModel, currentStartOffset, io, cloudinary, axios);
 
         console.log(`DEBUG: index.js returned ${postsScrapedInThisChunk} posts for chunk starting at offset ${currentStartOffset}`);
 
-        if (postsScrapedInThisChunk === 0 && totalScrapedCount > 0) {
-            io.emit('progress_update', { message: "index.js scraped 0 posts in this chunk. Likely no more posts or an issue occurred. Stopping." });
-            break;
-        }
-
-        if (postsScrapedInThisChunk === 0 && totalScrapedCount === 0) {
-            io.emit('progress_update', { type: 'warning', message: `No posts found for model "${ofModel}" at any offset. Please check the username.` });
-            break;
+        // Condition 1: If no posts were found in this chunk
+        if (postsScrapedInThisChunk === 0) {
+            // Case A: No posts found at all (first page or model has no content)
+            if (totalScrapedCount === 0) {
+                io.emit('progress_update', { type: 'warning', message: `No posts found for model "${ofModel}" at any offset. Please check the username.` });
+            } else {
+                // Case B: No posts found on a subsequent page, implying end of content
+                io.emit('progress_update', { message: "No more new posts found in this chunk. Assuming scraping is complete." });
+            }
+            break; // Exit the loop: no new content means we're done
         }
 
         totalScrapedCount += postsScrapedInThisChunk;
 
         io.emit('progress_update', { message: `--- Finished chunk. Posts scraped in this chunk: ${postsScrapedInThisChunk}. New total: ${totalScrapedCount} ---` });
 
-        // Only wait if there are more posts to scrape
-        if (totalScrapedCount < totalEstimatedPosts) {
-            io.emit('progress_update', { message: 'Waiting 10 seconds before starting next chunk to reduce bot detection risk...' });
-            await new Promise(resolve => setTimeout(resolve, 10000));
+        // Condition 2: If we have scraped all or more than the estimated posts, we should stop
+        if (totalScrapedCount >= totalEstimatedPosts) {
+            io.emit('progress_update', { message: `Scraped ${totalScrapedCount} posts, reaching or exceeding the estimated ${totalEstimatedPosts} posts. Stopping.` });
+            break; // Exit the loop when estimate is met or exceeded
         }
+
+        // Optional: Add a delay between chunks to reduce bot detection risk
+        io.emit('progress_update', { message: 'Waiting 10 seconds before starting next chunk to reduce bot detection risk...' });
+        await new Promise(resolve => setTimeout(resolve, 10000));
     }
 
-    io.emit('scrape_complete', { message: `\n--- SCRAPING COMPLETED ---` });
-    io.emit('scrape_complete', { message: `Total posts scraped for ${ofModel}: ${totalScrapedCount}` });
+    // --- EMIT scrape_complete HERE, AFTER THE WHILE LOOP HAS NATURALLY FINISHED ---
+    io.emit('scrape_complete', { message: `Scraping for ${ofModel} completed! Total posts processed: ${totalScrapedCount}.` });
+    // Removed the duplicate scrape_complete emission
 }
 
 module.exports = runMasterScript;

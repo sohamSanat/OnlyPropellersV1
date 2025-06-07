@@ -1,36 +1,13 @@
 // scraper.js
 const puppeteer = require('puppeteer');
-const fs = require('fs');
-const path = require('path');
-const fetch = require('node-fetch').default; // .default for CommonJS import
-const config = require('./config/config');
-
-
-async function downloadImage(imageUrl, downloadPath, modelName) {
-    try {
-        const response = await fetch(imageUrl);
-        if (!response.ok) {
-            throw new Error(`Failed to fetch image: ${response.statusText}`);
-        }
-        const buffer = await response.buffer();
-        const downloadsPath = path.join(require('os').homedir(), 'Downloads', 'OnlyFans Hacker', modelName);
-        if (!fs.existsSync(downloadsPath)) {
-            fs.mkdirSync(downloadsPath, { recursive: true });
-        }
-        const fullDownloadPath = path.join(downloadsPath, path.basename(downloadPath));
-        fs.writeFileSync(fullDownloadPath, buffer);
-        console.log(`Downloaded: ${imageUrl} to ${fullDownloadPath}`); // Log full path for clarity
-    } catch (error) {
-        console.error(`Error downloading ${imageUrl}:`, error.message);
-    }
-}
+const config = require('./config/config'); // Ensure config.js is accessible
 
 
 async function scrapePostLinks(page, url) {
     try {
         await page.goto(url, { waitUntil: 'domcontentloaded' });
         // Add a small delay after navigation, sometimes useful for dynamic content
-        await new Promise(resolve => setTimeout(resolve, 500)); 
+        await new Promise(resolve => setTimeout(resolve, 500));
         await page.waitForSelector('.card-list__items', { timeout: 60000 });
 
         const postLinks = await page.$$eval('.card-list__items article.post-card.post-card--preview a[href*="/post/"]', (links) =>
@@ -38,7 +15,7 @@ async function scrapePostLinks(page, url) {
         );
         return postLinks;
     } catch (error) {
-        console.error(`Error scraping ${url}:`, error);
+        console.error(`Error scraping post links from ${url}:`, error);
         return null;
     }
 }
@@ -47,11 +24,30 @@ async function scrapePostLinks(page, url) {
 async function scrapeImagesFromPost(page, postUrl) {
     await page.goto(postUrl, { waitUntil: 'networkidle2' });
     // Add a small delay after navigation
-    await new Promise(resolve => setTimeout(resolve, 500)); 
-    const imageUrls = await page.$$eval('img', (imgs) =>
-        imgs.map((img) => img.src).filter((src) => src && !src.endsWith('.svg'))
-    );
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    const imageUrls = await page.$$eval('img', (imgs) => {
+        return imgs.filter(img => {
+            // Check if the image source is valid and not an SVG
+            if (!img.src || img.src.endsWith('.svg')) {
+                return false;
+            }
+
+            // Check if any ancestor is a <header> tag with class "post__header"
+            let currentElement = img;
+            while (currentElement) {
+                // Ensure currentElement is an HTMLElement before checking tagName and classList
+                if (currentElement.nodeType === Node.ELEMENT_NODE &&
+                    currentElement.tagName === 'HEADER' &&
+                    currentElement.classList.contains('post__header')) {
+                    return false; // Exclude this image because it's inside a post__header
+                }
+                currentElement = currentElement.parentElement;
+            }
+            return true; // Include this image
+        }).map(img => img.src);
+    });
     return imageUrls;
 }
 
-module.exports = { scrapePostLinks, downloadImage, scrapeImagesFromPost };
+module.exports = { scrapePostLinks, scrapeImagesFromPost };

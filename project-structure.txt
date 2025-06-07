@@ -1,14 +1,12 @@
-d:\projects\Ai_projects\Coomer_Scrapper_v1
-├── README.md
-├── data\
-│   └── coomers\
 └── my-scraper-website\
     ├── backend\
     │   ├── cli-runner.js
+    │   ├── cloudinaryConfig.js
     │   ├── config\
     │   │   └── config.js
     │   ├── data\
     │   │   └── coomers\
+    │   │       ├── me1adinha\
     │   │       └── sophieraiin\
     │   ├── index.js
     │   ├── master.js
