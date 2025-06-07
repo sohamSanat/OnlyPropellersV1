@@ -7,7 +7,7 @@ const cloudinary = require('./cloudinaryConfig');
 
 
 async function checkNumberOfPages(ofModel) {
-    console.log(`[Master Debug] checkNumberOfPages: Estimating total posts for ${ofModel}...`);
+    console.log(`[Master Debug] checkNumberOfPages: Initiating browser for total post estimation for ${ofModel}...`);
     let browser;
     try {
         browser = await puppeteer.launch({
@@ -22,37 +22,58 @@ async function checkNumberOfPages(ofModel) {
             ]
         });
         const page = await browser.newPage();
-        page.setDefaultNavigationTimeout(60000); // Set a default timeout for navigation
+        page.setDefaultNavigationTimeout(90000); // Increased timeout for initial navigation
 
-        await page.goto(`https://coomer.su/onlyfans/user/${ofModel}`, { waitUntil: 'domcontentloaded', timeout: 90000 });
-        console.log(`[Master Debug] checkNumberOfPages: Page loaded for estimation.`);
+        const targetUrl = `https://coomer.su/onlyfans/user/${ofModel}`;
+        console.log(`[Master Debug] checkNumberOfPages: Navigating to ${targetUrl} for pagination check.`);
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 90000 }); // Wait for DOM content, longer timeout
+        await new Promise(resolve => setTimeout(resolve, 3000)); // Additional delay for dynamic content to load
 
-        const paginationLinks = await page.$$eval('.pagination .page-item a.page-link', (links) => {
-            const offsets = links
-                .map(link => {
-                    const url = new URL(link.href);
-                    return parseInt(url.searchParams.get('o'), 10);
-                })
-                .filter(offset => !isNaN(offset)); // Filter out NaN values
-            return offsets;
+        console.log(`[Master Debug] checkNumberOfPages: Page loaded. Attempting to find pagination elements.`);
+
+        // --- REVISED PAGINATION DETECTION ---
+        const totalEstimatedPosts = await page.evaluate(() => {
+            let maxOffset = 0;
+            // Select all pagination links that have a numerical value for 'o' parameter
+            // and are generally part of pagination controls (e.g., in a menu or direct page links)
+            const paginationLinks = Array.from(document.querySelectorAll('menu a[href*="/onlyfans/user/"], .pagination .page-item a.page-link'));
+
+            console.log(`[Page Evaluate] Found ${paginationLinks.length} potential pagination links.`);
+
+            paginationLinks.forEach(link => {
+                const url = new URL(link.href);
+                const offsetStr = url.searchParams.get('o');
+                if (offsetStr) {
+                    const offset = parseInt(offsetStr, 10);
+                    if (!isNaN(offset) && offset > maxOffset) {
+                        maxOffset = offset;
+                    }
+                }
+            });
+
+            // If no explicit pagination links with 'o' parameter are found,
+            // check if there are any posts on the first page.
+            // If so, assume at least 50 posts (the content of the first page).
+            // Otherwise, if no posts and no pagination, assume 0.
+            if (maxOffset === 0) {
+                const postsOnFirstPage = document.querySelectorAll('.card-list__items .card').length;
+                console.log(`[Page Evaluate] No 'o' offsets found. Posts on first page: ${postsOnFirstPage}.`);
+                return postsOnFirstPage > 0 ? 50 : 0; // Assume 50 if content exists on first page, else 0
+            }
+
+            // Coomer.su typically shows 50 posts per page. The 'o' parameter is the offset of the first post.
+            // So, if the highest offset is X, it means there's a page starting at X.
+            // The total number of posts would then be X + 50 (for the content on that last page).
+            return maxOffset + 50;
         });
 
-        let maxOffset = 0;
-        if (paginationLinks.length > 0) {
-            maxOffset = Math.max(...paginationLinks);
-            console.log(`[Master Debug] checkNumberOfPages: Found max pagination offset: ${maxOffset}`);
-        } else {
-            console.log(`[Master Debug] checkNumberOfPages: No pagination links found. Assuming single page or first 50 posts.`);
-        }
+        console.log(`[Master Debug] checkNumberOfPages: Final estimated total posts: ${totalEstimatedPosts}`);
+        return totalEstimatedPosts;
 
-        // Return a slightly higher estimate than the last page's offset
-        // Assuming 50 posts per page, add 50 to cover the last page's content
-        const estimated = maxOffset + 50;
-        console.log(`[Master Debug] checkNumberOfPages: Estimated total posts: ${estimated}`);
-        return estimated;
     } catch (error) {
-        console.error(`[Master Error] checkNumberOfPages: Error checking number of pages for ${ofModel}:`, error.message);
-        return 50; // Default to 50 if an error occurs to at least scrape the first page
+        console.error(`[Master Error] checkNumberOfPages: Failed to estimate total posts for ${ofModel}:`, error.message);
+        // Fallback to a reasonable default if estimation fails (e.g., 50 for a single page, or a higher number like 500)
+        return 500; // Increased default to encourage more scraping if estimation fails
     } finally {
         if (browser) {
             await browser.close();
@@ -73,46 +94,50 @@ async function runMasterScript(ofModel, socketId, io) {
 
     console.log(`[Master Debug] runMasterScript: Initial Estimated Posts: ${totalEstimatedPosts}`);
 
+    let consecutiveZeroChunks = 0; // Counter for consecutive chunks returning 0 posts
+
     while (true) { // Loop indefinitely until an explicit break condition is met
         const currentStartOffset = totalScrapedCount;
         io.to(socketId).emit('progress_update', { message: `Calling index.js to scrape chunk starting at offset ${currentStartOffset}...` });
         console.log(`[Master Debug] runMasterScript: Total scraped count before chunk: ${totalScrapedCount}. Current offset for index.js: ${currentStartOffset}`);
 
-        // Call index.js to scrape a chunk (up to 100 posts per call)
         let postsScrapedInThisChunk = 0;
         try {
             postsScrapedInThisChunk = await main(ofModel, currentStartOffset, io, cloudinary, axios);
         } catch (e) {
             console.error(`[Master Error] runMasterScript: Error during index.js main call for offset ${currentStartOffset}:`, e.message);
             io.to(socketId).emit('scrape_error', { message: `Backend error during scraping chunk ${currentStartOffset}: ${e.message}` });
-            break; // Break on critical error
+            consecutiveZeroChunks++; // Treat a crash as effectively 0 posts for this chunk
+            // If it's a critical error, you might want to break immediately:
+            // break;
         }
-
 
         console.log(`[Master Debug] runMasterScript: index.js returned ${postsScrapedInThisChunk} posts for chunk starting at ${currentStartOffset}`);
 
-        // Condition 1: If no posts were found in this chunk
+        // Condition 1: If no posts were found in this chunk from index.js
         if (postsScrapedInThisChunk === 0) {
-            console.log(`[Master Debug] runMasterScript: postsScrapedInThisChunk is 0.`);
-            // Case A: No posts found at all (first page or model has no content)
-            if (totalScrapedCount === 0) {
-                io.to(socketId).emit('progress_update', { type: 'warning', message: `No posts found for model "${ofModel}" at any offset. Please check the username.` });
-            } else {
-                // Case B: No posts found on a subsequent page, implying end of content
-                io.to(socketId).emit('progress_update', { message: "No more new posts found in this chunk. Assuming scraping is complete." });
+            consecutiveZeroChunks++;
+            console.log(`[Master Debug] runMasterScript: postsScrapedInThisChunk is 0. Consecutive zero chunks: ${consecutiveZeroChunks}`);
+            // If we get 3 consecutive chunks with 0 posts, it's a strong signal for end of content or a consistent block
+            if (consecutiveZeroChunks >= 3) { // Increased from 1 to 3 to be more tolerant of empty chunks
+                io.to(socketId).emit('progress_update', { message: `Received ${consecutiveZeroChunks} consecutive empty chunks. Assuming end of content or persistent block. Stopping.` });
+                break;
             }
-            break; // Exit the loop: no new content means we're done
+            // If it's not 3 consecutive, just continue to next chunk, maybe it was a transient issue
+        } else {
+            // Reset consecutive zero chunks if we successfully scrape posts
+            consecutiveZeroChunks = 0;
+            totalScrapedCount += postsScrapedInThisChunk;
+            io.to(socketId).emit('progress_update', { message: `Total posts scraped so far: ${totalScrapedCount}` });
+            console.log(`[Master Debug] runMasterScript: Total scraped count updated to: ${totalScrapedCount}`);
         }
 
-        totalScrapedCount += postsScrapedInThisChunk;
-        io.to(socketId).emit('progress_update', { message: `Total posts scraped so far: ${totalScrapedCount}` });
-        console.log(`[Master Debug] runMasterScript: Total scraped count updated to: ${totalScrapedCount}`);
-
         // Condition 2: If we have scraped enough posts (reached or exceeded estimated total)
-        if (totalScrapedCount >= totalEstimatedPosts) {
+        // This break ensures we don't go infinitely if estimate is initially good
+        if (totalEstimatedPosts > 0 && totalScrapedCount >= totalEstimatedPosts) {
             console.log(`[Master Debug] runMasterScript: Total scraped count (${totalScrapedCount}) >= Estimated posts (${totalEstimatedPosts}). Breaking loop.`);
             io.to(socketId).emit('progress_update', { message: `Scraped ${totalScrapedCount} posts, reaching or exceeding the estimated ${totalEstimatedPosts} posts. Stopping.` });
-            break; // Exit the loop: we've scraped all estimated content
+            break;
         }
 
         // Add a delay between chunks to avoid overwhelming the server or being detected
