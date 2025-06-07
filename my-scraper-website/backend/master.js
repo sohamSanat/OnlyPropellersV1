@@ -11,14 +11,14 @@ async function checkNumberOfPages(ofModel) {
     let browser;
     try {
         browser = await puppeteer.launch({
-            headless: config.headless,
+            headless: 'new', // Use 'new' for the latest headless mode
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
+                '--disable-dev-shm-usage', // Recommended for Docker/server environments
                 '--disable-accelerated-video-decode',
                 '--no-zygote',
-                '--single-process'
+                '--single-process' // Often helps with memory and stability in constrained environments
             ]
         });
         const page = await browser.newPage();
