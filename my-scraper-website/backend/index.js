@@ -2,50 +2,52 @@
 const puppeteer = require('puppeteer');
 const { scrapePostLinks, scrapeImagesFromPost } = require('./scraper');
 const config = require('./config/config');
-const cloudinary = require('./cloudinaryConfig'); // Import the configured Cloudinary object
-const axios = require('axios'); // For downloading images
+const cloudinary = require('./cloudinaryConfig');
+const axios = require('axios');
 
 // This function will now take the initial offset for the URL.
 // It will scrape up to 100 posts (2 pages) per call.
 // It now ACCEPTS an 'io' (socket) object, and new 'cloudinary' and 'axios' objects.
 async function main(ofModel, startOffset, io, cloudinary, axios) {
-    // Renamed for clarity: this tracks the number of posts for which content was attempted
     let postsProcessedInThisChunk = 0;
-    const MAX_POSTS_PER_CHUNK = 100; // Limit to 100 posts for this index.js execution (2 pages)
+    const MAX_POSTS_PER_CHUNK = 100;
 
     io.emit('progress_update', { message: `[Chunk ${startOffset}] Starting new browser session for ${ofModel}...` });
+    console.log(`[Index Debug] Chunk ${startOffset}: Initiating Puppeteer browser.`); // Debugging
 
     let browser;
     try {
         browser = await puppeteer.launch({
-            headless: config.headless,
+            headless: 'new', // Use 'new' for the latest headless mode
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
+                '--disable-dev-shm-usage', // Critical for Render/Docker environments
                 '--disable-accelerated-video-decode',
                 '--no-zygote',
-                '--single-process'
+                '--single-process' // Helps with memory and stability
             ]
         });
         const page = await browser.newPage();
-        page.setDefaultNavigationTimeout(60000); // Set a default timeout for navigation
+        page.setDefaultNavigationTimeout(120000); // Increased default timeout to 120 seconds (2 minutes) for page operations
+        console.log(`[Index Debug] Chunk ${startOffset}: Puppeteer browser launched, page opened.`); // Debugging
 
         let currentOffset = startOffset;
 
-        // Loop to get two pages (50 posts each), for a total of 100 posts per call to main
         for (let page_chunk_iteration = 0; page_chunk_iteration < MAX_POSTS_PER_CHUNK / 50; page_chunk_iteration++) {
-            // Check if we've already processed enough posts for this chunk
             if (postsProcessedInThisChunk >= MAX_POSTS_PER_CHUNK) {
                 io.emit('progress_update', { message: `[Chunk ${startOffset}] Reached maximum posts for this run (${MAX_POSTS_PER_CHUNK}).` });
+                console.log(`[Index Debug] Chunk ${startOffset}: Max posts reached for this main() call.`); // Debugging
                 break;
             }
 
             const currentTargetUrl = `https://coomer.su/onlyfans/user/${ofModel}?o=${currentOffset}`;
             io.emit('progress_update', { message: `[Chunk ${startOffset}] Scraping post links from: ${currentTargetUrl}` });
+            console.log(`[Index Debug] Chunk ${startOffset}: Scraping post links from: ${currentTargetUrl}`); // Debugging
 
             if (page_chunk_iteration > 0) {
                 io.emit('progress_update', { message: `[Chunk ${startOffset}] Waiting 3 seconds before loading next page chunk...` });
+                console.log(`[Index Debug] Chunk ${startOffset}: Delaying for next page chunk.`); // Debugging
                 await new Promise(resolve => setTimeout(resolve, 3000));
             }
 
@@ -53,39 +55,43 @@ async function main(ofModel, startOffset, io, cloudinary, axios) {
 
             if (!postLinks || postLinks.length === 0) {
                 io.emit('progress_update', { message: `[Chunk ${startOffset}] No more post links found on ${currentTargetUrl}. Stopping this chunk.` });
-                break; // No more posts on this page
+                console.log(`[Index Debug] Chunk ${startOffset}: No more post links found. Breaking.`); // Debugging
+                break;
             }
 
             io.emit('progress_update', { message: `[Chunk ${startOffset}] Found ${postLinks.length} post links on this page (offset: ${currentOffset}).` });
+            console.log(`[Index Debug] Chunk ${startOffset}: Found ${postLinks.length} post links.`); // Debugging
 
-            // Process posts found on this specific page (up to 50)
             for (const postLink of postLinks) {
                 if (postsProcessedInThisChunk >= MAX_POSTS_PER_CHUNK) {
                     io.emit('progress_update', { message: `[Chunk ${startOffset}] Reached maximum posts for this run (${MAX_POSTS_PER_CHUNK}). Exiting post loop.` });
+                    console.log(`[Index Debug] Chunk ${startOffset}: Max posts reached within post loop. Breaking.`); // Debugging
                     break;
                 }
 
                 io.emit('progress_update', { message: `[Chunk ${startOffset}] Entering post: ${postLink}` });
+                console.log(`[Index Debug] Chunk ${startOffset}: Processing post: ${postLink}`); // Debugging
+
                 let imageUrls = [];
                 try {
                     imageUrls = await scrapeImagesFromPost(page, postLink);
                     io.emit('progress_update', { message: `[Chunk ${startOffset}] Found ${imageUrls.length} images/videos in post.` });
+                    console.log(`[Index Debug] Chunk ${startOffset}: Found ${imageUrls.length} media items in post.`); // Debugging
                 } catch (scrapeError) {
-                    console.error(`[Chunk ${startOffset}] Error scraping images from post ${postLink}:`, scrapeError.message);
+                    console.error(`[Index Error] Chunk ${startOffset}: Error scraping images from post ${postLink}:`, scrapeError.message);
                     io.emit('progress_update', { type: 'error', message: `[Chunk ${startOffset}] Failed to scrape images from post ${postLink}: ${scrapeError.message}` });
                     // Continue to next post even if image scraping fails for one post
                 }
 
-                // Increment postsProcessedInThisChunk here, for each post visited
-                postsProcessedInThisChunk++;
+                postsProcessedInThisChunk++; // Increment for each post visited
 
-                // Process found media (download and upload)
                 for (const imageUrl of imageUrls) {
                     try {
                         const filename = new URL(imageUrl).pathname.split('/').pop();
                         io.emit('progress_update', { message: `[Chunk ${startOffset}] Processing media: ${filename} from ${imageUrl}` });
+                        console.log(`[Index Debug] Chunk ${startOffset}: Downloading and uploading media: ${filename}`); // Debugging
 
-                        const response = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+                        const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 }); // Added timeout for axios download
                         const mediaBuffer = Buffer.from(response.data);
                         const mimeType = response.headers['content-type'];
                         let resourceType = 'raw';
@@ -103,6 +109,7 @@ async function main(ofModel, startOffset, io, cloudinary, axios) {
                         });
 
                         io.emit('progress_update', { message: `[Chunk ${startOffset}] Uploaded media: ${uploadResult.secure_url}` });
+                        console.log(`[Index Debug] Chunk ${startOffset}: Media uploaded: ${uploadResult.secure_url}`); // Debugging
                         io.emit('image_scraped', {
                             imageUrl: uploadResult.secure_url,
                             modelName: ofModel,
@@ -110,7 +117,7 @@ async function main(ofModel, startOffset, io, cloudinary, axios) {
                         });
 
                     } catch (uploadError) {
-                        console.error(`[Chunk ${startOffset}] Error processing media ${imageUrl}:`, uploadError.message);
+                        console.error(`[Index Error] Chunk ${startOffset}: Error processing media ${imageUrl}:`, uploadError.message);
                         io.emit('progress_update', { type: 'error', message: `[Chunk ${startOffset}] Failed to process media ${imageUrl}: ${uploadError.message}` });
                     }
                 }
@@ -119,17 +126,16 @@ async function main(ofModel, startOffset, io, cloudinary, axios) {
             currentOffset += 50; // Increment the offset for the next 50 posts (next page)
         }
     } catch (error) {
+        console.error(`[Index Error] Chunk ${startOffset}: An unhandled error occurred during scraping:`, error.message);
         io.emit('progress_update', { type: 'error', message: `[Chunk ${startOffset}] An error occurred during scraping: ${error.message}` });
-        console.error(`[Chunk ${startOffset}] Unhandled error in index.js:`, error);
-        throw error;
+        throw error; // Re-throw to be caught by master.js
     } finally {
         if (browser) {
             await browser.close();
-            io.emit('progress_update', { message: `[Chunk ${startOffset}] Browser closed. Processed ${postsProcessedInThisChunk} posts in this session.` });
+            console.log(`[Index Debug] Chunk ${startOffset}: Browser closed. Processed ${postsProcessedInThisChunk} posts in this session.`); // Debugging
         }
     }
 
-    // Return the number of posts processed in this specific chunk.
     return postsProcessedInThisChunk;
 }
 

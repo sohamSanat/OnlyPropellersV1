@@ -3,7 +3,28 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
-const { runMasterScript } = require('./master'); // CHANGED: Added destructuring { runMasterScript }
+const { runMasterScript } = require('./master'); // Corrected import (using destructuring)
+
+
+// --- GLOBAL UNCAUGHT EXCEPTION HANDLERS (CRITICAL FOR DEBUGGING CRASHES) ---
+process.on('uncaughtException', (err) => {
+    console.error('--- FATAL UNCAUGHT EXCEPTION ---');
+    console.error('An uncaught exception occurred. This is a severe error and likely caused a process crash.');
+    console.error('Error:', err);
+    console.error('Stack:', err.stack);
+    // Attempt to log more details before potentially exiting
+    // Depending on the error, the process might exit immediately after this.
+    // In a production app, you might send this to an error monitoring service.
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('--- FATAL UNHANDLED REJECTION ---');
+    console.error('An unhandled promise rejection occurred. This is also a severe error and likely caused a process crash.');
+    console.error('Reason:', reason);
+    console.error('Promise:', promise);
+    // Attempt to log more details before potentially exiting.
+});
+// --- END GLOBAL UNCAUGHT EXCEPTION HANDLERS ---
 
 
 const app = express();
@@ -83,10 +104,9 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`Scrape request received for model: ${modelName} from socket: ${socketId}. Initiating master script...`);
 
     try {
-        // Pass the modelName, specific clientSocket's ID, and the io object
         await runMasterScript(modelName, socketId, io); // Pass socketId and io
     } catch (error) {
-        console.error(`Error during scraping for ${modelName}:`, error);
+        console.error(`Error during scraping for ${modelName} in /api/scrape endpoint:`, error);
         clientSocket.emit('scrape_error', { message: `Scraping failed for ${modelName}: ${error.message}` });
     }
 });
