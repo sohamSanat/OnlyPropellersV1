@@ -1,42 +1,41 @@
 // scraper.js
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer'); // Still needed for Node.ELEMENT_NODE
 const config = require('./config/config');
 
 
+// scrapePostLinks now accepts a 'page' object
 async function scrapePostLinks(page, url) {
-    console.log(`[Scraper Debug] scrapePostLinks: Navigating to ${url}`); // Debugging
+    console.log(`[Scraper Debug] scrapePostLinks: Using provided page to navigate to ${url}`);
     try {
-        // Change to 'networkidle2' for more robust page loading, waiting for network to be quiet
-        await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 }); // Increased timeout to 90 seconds
-        console.log(`[Scraper Debug] scrapePostLinks: Page loaded for ${url}.`); // Debugging
+        await page.goto(url, { waitUntil: 'networkidle2', timeout: 90000 });
+        console.log(`[Scraper Debug] scrapePostLinks: Page loaded for ${url}.`);
 
-        // Add a slightly longer delay after navigation before checking selector
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Increased from 500ms to 1500ms
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
-        // Wait for the main content wrapper
-        await page.waitForSelector('.card-list__items', { timeout: 60000 }); // Still 60s for selector
-        console.log(`[Scraper Debug] scrapePostLinks: .card-list__items selector found.`); // Debugging
+        await page.waitForSelector('.card-list__items', { timeout: 60000 });
+        console.log(`[Scraper Debug] scrapePostLinks: .card-list__items selector found.`);
 
         const postLinks = await page.$$eval('.card-list__items article.post-card.post-card--preview a[href*="/post/"]', (links) => {
             const extractedLinks = links.map((link) => link.href);
-            console.log(`[Page Evaluate] Found ${extractedLinks.length} potential post links.`); // This logs in Puppeteer's console
+            console.log(`[Page Evaluate] Found ${extractedLinks.length} potential post links.`);
             return extractedLinks;
         });
 
-        console.log(`[Scraper Debug] scrapePostLinks: Extracted ${postLinks.length} post links from ${url}`); // Debugging
+        console.log(`[Scraper Debug] scrapePostLinks: Extracted ${postLinks.length} post links from ${url}`);
         return postLinks;
     } catch (error) {
-        console.error(`[Scraper Error] scrapePostLinks: Error scraping ${url}:`, error.message); // More detailed error
-        return null; // Return null on error to indicate failure
+        console.error(`[Scraper Error] scrapePostLinks: Error scraping ${url}:`, error.message);
+        return []; // Return empty array on error
     }
 }
 
 
+// scrapeImagesFromPost now accepts a 'page' object
 async function scrapeImagesFromPost(page, postUrl) {
-    console.log(`[Scraper Debug] scrapeImagesFromPost: Navigating to post ${postUrl}`); // Debugging
+    console.log(`[Scraper Debug] scrapeImagesFromPost: Using provided page to navigate to post ${postUrl}`);
     try {
-        await page.goto(postUrl, { waitUntil: 'networkidle2', timeout: 90000 }); // Increased timeout
-        await new Promise(resolve => setTimeout(resolve, 1500)); // Increased delay
+        await page.goto(postUrl, { waitUntil: 'networkidle2', timeout: 90000 });
+        await new Promise(resolve => setTimeout(resolve, 1500));
 
         const imageUrls = await page.$$eval('img', (imgs) => {
             const filteredUrls = imgs.filter(img => {
@@ -55,17 +54,17 @@ async function scrapeImagesFromPost(page, postUrl) {
                 }
                 return true;
             }).map(img => img.src);
-            console.log(`[Page Evaluate] Found ${filteredUrls.length} image/video URLs in post.`); // Logs in Puppeteer's console
+            console.log(`[Page Evaluate] Found ${filteredUrls.length} image/video URLs in post.`);
             return filteredUrls;
         });
 
-        console.log(`[Scraper Debug] scrapeImagesFromPost: Extracted ${imageUrls.length} image/video URLs from ${postUrl}`); // Debugging
+        console.log(`[Scraper Debug] scrapeImagesFromPost: Extracted ${imageUrls.length} image/video URLs from ${postUrl}`);
         return imageUrls;
     } catch (error) {
-        console.error(`[Scraper Error] scrapeImagesFromPost: Error scraping images from ${postUrl}:`, error.message); // More detailed error
-        // If an error occurs here, return an empty array so master.js doesn't break due to null/undefined
+        console.error(`[Scraper Error] scrapeImagesFromPost: Error scraping images from ${postUrl}:`, error.message);
         return [];
     }
 }
 
+// Export functions that now accept a page argument
 module.exports = { scrapePostLinks, scrapeImagesFromPost };
