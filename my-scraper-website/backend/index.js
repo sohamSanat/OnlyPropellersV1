@@ -1,13 +1,14 @@
 // index.js
+// Removed puppeteer import as it's now passed from master.js
 const { scrapePostLinks, scrapeImagesFromPost } = require('./scraper');
 const config = require('./config/config');
 const cloudinary = require('./cloudinaryConfig');
 const axios = require('axios');
 
 // The main function now accepts 'browser' as it will be launched and managed by master.js
-async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
-    let postsProcessedInThisChunk = 0;
-    const MAX_POSTS_PER_CHUNK = 100;
+async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // Added 'browser' here
+    let postsProcessedInThisChunk = 0; // Tracks posts for which content was attempted
+    const MAX_POSTS_PER_CHUNK = 100; // Limits posts processed in this index.js call
 
     io.emit('progress_update', { message: `[Chunk ${startOffset}] Using existing browser session for ${ofModel}...` });
     console.log(`[Index Debug] Chunk ${startOffset}: Using provided browser instance.`);
@@ -15,7 +16,7 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
     let page; // Declare page here, will be created and closed per chunk
     try {
         page = await browser.newPage(); // Create a new page from the existing browser instance
-        page.setDefaultNavigationTimeout(120000); // 2 minutes
+        page.setDefaultNavigationTimeout(120000); // Increased default timeout to 120 seconds (2 minutes)
         console.log(`[Index Debug] Chunk ${startOffset}: New page opened from browser.`);
 
         let currentOffset = startOffset;
@@ -37,6 +38,7 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
                 await new Promise(resolve => setTimeout(resolve, 3000));
             }
 
+            // Pass the 'page' object to scraper.js functions
             const postLinks = await scrapePostLinks(page, currentTargetUrl);
 
             if (!postLinks || postLinks.length === 0) {
@@ -60,6 +62,7 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
 
                 let imageUrls = [];
                 try {
+                    // Pass the 'page' object to scrapeImagesFromPost
                     imageUrls = await scrapeImagesFromPost(page, postLink);
                     io.emit('progress_update', { message: `[Chunk ${startOffset}] Found ${imageUrls.length} images/videos in post.` });
                     console.log(`[Index Debug] Chunk ${startOffset}: Found ${imageUrls.length} media items in post.`);
@@ -80,7 +83,7 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
                         io.emit('progress_update', { message: `[Chunk ${startOffset}] Processing media: ${filename} from ${imageUrl}` });
                         console.log(`[Index Debug] Chunk ${startOffset}: Downloading and uploading media: ${filename}`);
 
-                        const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 });
+                        const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 }); // Added timeout for axios download
                         mediaBuffer = Buffer.from(response.data); // Assign to local variable
                         const mimeType = response.headers['content-type'];
                         let resourceType = 'raw';
@@ -112,9 +115,14 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
                         // Explicitly nullify the buffer to aid garbage collection immediately
                         mediaBuffer = null;
                         // Force garbage collection (might not work in all Node.js versions/environments, but doesn't hurt)
+                        // This requires Node.js to be run with --expose-gc flag, which might not be set on Render by default.
                         if (global.gc) {
-                            global.gc();
-                            console.log(`[Index Debug] Chunk ${startOffset}: Global GC called.`);
+                            try {
+                                global.gc();
+                                console.log(`[Index Debug] Chunk ${startOffset}: Global GC called.`);
+                            } catch (gcErr) {
+                                console.warn(`[Index Debug] Error calling global.gc(): ${gcErr.message}`);
+                            }
                         }
                     }
 

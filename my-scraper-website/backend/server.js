@@ -3,7 +3,7 @@ const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
 const cors = require('cors');
-const { runMasterScript } = require('./master'); // Corrected import (using destructuring)
+const { runMasterScript } = require('./master'); // Corrected import: using destructuring for runMasterScript
 
 
 // --- GLOBAL UNCAUGHT EXCEPTION HANDLERS (CRITICAL FOR DEBUGGING CRASHES) ---
@@ -12,9 +12,8 @@ process.on('uncaughtException', (err) => {
     console.error('An uncaught exception occurred. This is a severe error and likely caused a process crash.');
     console.error('Error:', err);
     console.error('Stack:', err.stack);
-    // Attempt to log more details before potentially exiting
-    // Depending on the error, the process might exit immediately after this.
     // In a production app, you might send this to an error monitoring service.
+    // For debugging, we log it and let the process exit so Render restarts it.
 });
 
 process.on('unhandledRejection', (reason, promise) => {
@@ -22,7 +21,6 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('An unhandled promise rejection occurred. This is also a severe error and likely caused a process crash.');
     console.error('Reason:', reason);
     console.error('Promise:', promise);
-    // Attempt to log more details before potentially exiting.
 });
 // --- END GLOBAL UNCAUGHT EXCEPTION HANDLERS ---
 
@@ -32,9 +30,9 @@ const server = http.createServer(app);
 
 // --- CORS Configuration ---
 const allowedOrigins = [
-    "http://localhost:5173",
-    process.env.FRONTEND_URL
-].filter(Boolean);
+    "http://localhost:5173", // Keep for local development
+    process.env.FRONTEND_URL // THIS IS WHERE YOUR RENDER FRONTEND URL WILL BE USED
+].filter(Boolean); // Filters out any undefined/null entries if FRONTEND_URL is not set locally
 
 const corsOptions = {
     origin: function (origin, callback) {
@@ -48,9 +46,10 @@ const corsOptions = {
     methods: ["GET", "POST"]
 };
 
-app.use(cors(corsOptions));
+// Apply CORS to both Express routes and Socket.IO
+app.use(cors(corsOptions)); // Apply to Express routes
 const io = socketIo(server, {
-    cors: corsOptions
+    cors: corsOptions // Apply to Socket.IO
 });
 
 const PORT = process.env.PORT || 3000;
@@ -58,9 +57,9 @@ server.listen(PORT, () => {
     console.log(`Backend server running on port ${PORT}`);
 });
 
-app.use(express.json());
+app.use(express.json()); // To parse JSON request bodies
 
-const connectedSockets = new Map();
+const connectedSockets = new Map(); // Store connected sockets by ID
 
 io.on('connection', (socket) => {
     console.log(`A user connected: ${socket.id}`);
@@ -72,6 +71,7 @@ io.on('connection', (socket) => {
     });
 });
 
+// Scrape endpoint
 app.post('/api/scrape', async (req, res) => {
     const { modelName } = req.body;
     const socketId = req.headers['x-socket-id'];
@@ -79,10 +79,6 @@ app.post('/api/scrape', async (req, res) => {
     console.log('--- RECEIVED SCRAPE REQUEST ---');
     console.log('Model Name:', modelName);
     console.log('Socket ID (from header):', socketId);
-    console.log('All Headers Received:');
-    for (const key in req.headers) {
-        console.log(`   ${key}: ${req.headers[key]}`);
-    }
     console.log('-----------------------------');
 
     if (!modelName) {
@@ -104,7 +100,9 @@ app.post('/api/scrape', async (req, res) => {
     console.log(`Scrape request received for model: ${modelName} from socket: ${socketId}. Initiating master script...`);
 
     try {
-        await runMasterScript(modelName, socketId, io); // Pass socketId and io
+        // Pass the modelName, specific clientSocket's ID, and the io object
+        // The master script will manage Puppeteer browser instance(s)
+        await runMasterScript(modelName, socketId, io);
     } catch (error) {
         console.error(`Error during scraping for ${modelName} in /api/scrape endpoint:`, error);
         clientSocket.emit('scrape_error', { message: `Scraping failed for ${modelName}: ${error.message}` });
