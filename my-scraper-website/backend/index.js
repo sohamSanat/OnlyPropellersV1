@@ -1,5 +1,4 @@
 // index.js
-// Removed puppeteer import as it's now passed from master.js
 const { scrapePostLinks, scrapeImagesFromPost } = require('./scraper');
 const config = require('./config/config');
 const cloudinary = require('./cloudinaryConfig');
@@ -8,7 +7,7 @@ const axios = require('axios');
 // The main function now accepts 'browser' as it will be launched and managed by master.js
 async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // Added 'browser' here
     let postsProcessedInThisChunk = 0; // Tracks posts for which content was attempted
-    const MAX_POSTS_PER_CHUNK = 100; // Limits posts processed in this index.js call
+    const MAX_POSTS_PER_CHUNK = 10; // <<<< CRITICAL CHANGE: REDUCED CHUNK SIZE FOR OOM FIX <<<<
 
     io.emit('progress_update', { message: `[Chunk ${startOffset}] Using existing browser session for ${ofModel}...` });
     console.log(`[Index Debug] Chunk ${startOffset}: Using provided browser instance.`);
@@ -21,7 +20,10 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
 
         let currentOffset = startOffset;
 
-        for (let page_chunk_iteration = 0; page_chunk_iteration < MAX_POSTS_PER_CHUNK / 50; page_chunk_iteration++) {
+        // Loop to get pages, but constrained by MAX_POSTS_PER_CHUNK
+        // If MAX_POSTS_PER_CHUNK is 10, this loop will run at most twice (50 posts/page),
+        // but the inner loop will break after 10 posts.
+        for (let page_chunk_iteration = 0; page_chunk_iteration < Math.ceil(MAX_POSTS_PER_CHUNK / 50) || 1; page_chunk_iteration++) {
             if (postsProcessedInThisChunk >= MAX_POSTS_PER_CHUNK) {
                 io.emit('progress_update', { message: `[Chunk ${startOffset}] Reached maximum posts for this run (${MAX_POSTS_PER_CHUNK}).` });
                 console.log(`[Index Debug] Chunk ${startOffset}: Max posts reached for this main() call. Breaking.`);
@@ -69,22 +71,21 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
                 } catch (scrapeError) {
                     console.error(`[Index Error] Chunk ${startOffset}: Error scraping images from post ${postLink}:`, scrapeError.message);
                     io.emit('progress_update', { type: 'error', message: `[Chunk ${startOffset}] Failed to scrape images from post ${postLink}: ${scrapeError.message}` });
-                    // Continue to next post even if image scraping fails for one post
                 }
 
                 postsProcessedInThisChunk++; // Increment for each post visited
 
-                for (let i = 0; i < imageUrls.length; i++) { // Use a traditional for loop for better control
+                for (let i = 0; i < imageUrls.length; i++) {
                     const imageUrl = imageUrls[i];
-                    let mediaBuffer = null; // Declare buffer locally within loop scope
+                    let mediaBuffer = null;
 
                     try {
                         const filename = new URL(imageUrl).pathname.split('/').pop();
                         io.emit('progress_update', { message: `[Chunk ${startOffset}] Processing media: ${filename} from ${imageUrl}` });
                         console.log(`[Index Debug] Chunk ${startOffset}: Downloading and uploading media: ${filename}`);
 
-                        const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 }); // Added timeout for axios download
-                        mediaBuffer = Buffer.from(response.data); // Assign to local variable
+                        const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 });
+                        mediaBuffer = Buffer.from(response.data);
                         const mimeType = response.headers['content-type'];
                         let resourceType = 'raw';
 
@@ -112,10 +113,7 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
                         console.error(`[Index Error] Chunk ${startOffset}: Error processing media ${imageUrl}:`, uploadError.message);
                         io.emit('progress_update', { type: 'error', message: `[Chunk ${startOffset}] Failed to process media ${imageUrl}: ${uploadError.message}` });
                     } finally {
-                        // Explicitly nullify the buffer to aid garbage collection immediately
                         mediaBuffer = null;
-                        // Force garbage collection (might not work in all Node.js versions/environments, but doesn't hurt)
-                        // This requires Node.js to be run with --expose-gc flag, which might not be set on Render by default.
                         if (global.gc) {
                             try {
                                 global.gc();
@@ -127,9 +125,8 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
                     }
 
                     // Add a short delay between processing each individual image/video
-                    // This gives the event loop a breather and time for GC
-                    if (i < imageUrls.length - 1) { // Don't delay after the last item
-                        await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay per image
+                    if (i < imageUrls.length - 1) {
+                        await new Promise(resolve => setTimeout(resolve, 500));
                         console.log(`[Index Debug] Chunk ${startOffset}: Short delay after media processing.`);
                     }
                 }
@@ -140,10 +137,10 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
     } catch (error) {
         console.error(`[Index Error] Chunk ${startOffset}: An unhandled error occurred during scraping:`, error.message);
         io.emit('progress_update', { type: 'error', message: `[Chunk ${startOffset}] An error occurred during scraping: ${error.message}` });
-        throw error; // Re-throw to be caught by master.js
+        throw error;
     } finally {
         if (page) {
-            await page.close(); // Close the page instance, not the browser
+            await page.close();
             console.log(`[Index Debug] Chunk ${startOffset}: Page closed.`);
         }
     }
