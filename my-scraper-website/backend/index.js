@@ -4,7 +4,6 @@ const config = require('./config/config');
 const cloudinary = require('./cloudinaryConfig');
 const axios = require('axios');
 
-// The main function now accepts 'browser' as it will be launched and managed by master.js
 async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
     let postsProcessedInThisChunk = 0;
     const MAX_POSTS_PER_CHUNK = 10; // Aggressive chunk size for OOM fix
@@ -12,10 +11,10 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
     io.emit('progress_update', { message: `[Chunk ${startOffset}] Using existing browser session for ${ofModel}...` });
     console.log(`[Index Debug] Chunk ${startOffset}: Using provided browser instance.`);
 
-    let page; // Declare page here, will be created and closed per chunk
+    let page;
     try {
-        page = await browser.newPage(); // Create a new page from the existing browser instance
-        page.setDefaultNavigationTimeout(120000); // 2 minutes
+        page = await browser.newPage();
+        page.setDefaultNavigationTimeout(120000);
         console.log(`[Index Debug] Chunk ${startOffset}: New page opened from browser.`);
 
         let currentOffset = startOffset;
@@ -73,6 +72,7 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
                 for (let i = 0; i < imageUrls.length; i++) {
                     const imageUrl = imageUrls[i];
                     let mediaBuffer = null;
+                    let base64EncodedMedia = null; // Declare base64 string here
 
                     try {
                         const filename = new URL(imageUrl).pathname.split('/').pop();
@@ -80,9 +80,8 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
                         console.log(`[Index Debug] Chunk ${startOffset}: Downloading and uploading media: ${filename}`);
 
                         const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 });
-                        mediaBuffer = Buffer.from(response.data); // Store as Buffer directly
+                        mediaBuffer = Buffer.from(response.data);
 
-                        // DETERMINE resource_type (image, video, raw)
                         const mimeType = response.headers['content-type'];
                         let resourceType = 'raw';
                         if (mimeType && mimeType.startsWith('image/')) {
@@ -91,14 +90,17 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
                             resourceType = 'video';
                         }
 
-                        // --- CRITICAL CHANGE: UPLOAD BUFFER DIRECTLY TO CLOUDINARY ---
-                        const uploadResult = await cloudinary.uploader.upload(mediaBuffer, {
+                        // --- REVERTED CHANGE: Convert to Base64 String ---
+                        base64EncodedMedia = mediaBuffer.toString('base64');
+                        const dataUri = `data:${mimeType};base64,${base64EncodedMedia}`;
+
+                        const uploadResult = await cloudinary.uploader.upload(dataUri, { // Upload the data URI string
                             folder: `onlyfans_scrapes/${ofModel}`,
-                            resource_type: resourceType, // Use determined resource type
+                            resource_type: resourceType,
                             public_id: `${ofModel}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
-                            format: 'auto' // Let Cloudinary auto-detect format from buffer
+                            format: 'auto'
                         });
-                        // --- END CRITICAL CHANGE ---
+                        // --- END REVERTED CHANGE ---
 
                         io.emit('progress_update', { message: `[Chunk ${startOffset}] Uploaded media: ${uploadResult.secure_url}` });
                         console.log(`[Index Debug] Chunk ${startOffset}: Media uploaded: ${uploadResult.secure_url}`);
@@ -112,7 +114,9 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
                         console.error(`[Index Error] Chunk ${startOffset}: Error processing media ${imageUrl}:`, uploadError.message);
                         io.emit('progress_update', { type: 'error', message: `[Chunk ${startOffset}] Failed to process media ${imageUrl}: ${uploadError.message}` });
                     } finally {
-                        mediaBuffer = null; // Ensure buffer is nullified for GC
+                        // Nullify both buffer and base64 string immediately
+                        mediaBuffer = null;
+                        base64EncodedMedia = null;
                         if (global.gc) {
                             try {
                                 global.gc();
