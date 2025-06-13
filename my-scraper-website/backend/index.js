@@ -5,9 +5,9 @@ const cloudinary = require('./cloudinaryConfig');
 const axios = require('axios');
 
 // The main function now accepts 'browser' as it will be launched and managed by master.js
-async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // Added 'browser' here
-    let postsProcessedInThisChunk = 0; // Tracks posts for which content was attempted
-    const MAX_POSTS_PER_CHUNK = 10; // <<<< CRITICAL CHANGE: REDUCED CHUNK SIZE FOR OOM FIX <<<<
+async function main(ofModel, startOffset, io, cloudinary, axios, browser) {
+    let postsProcessedInThisChunk = 0;
+    const MAX_POSTS_PER_CHUNK = 10; // Aggressive chunk size for OOM fix
 
     io.emit('progress_update', { message: `[Chunk ${startOffset}] Using existing browser session for ${ofModel}...` });
     console.log(`[Index Debug] Chunk ${startOffset}: Using provided browser instance.`);
@@ -15,14 +15,11 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
     let page; // Declare page here, will be created and closed per chunk
     try {
         page = await browser.newPage(); // Create a new page from the existing browser instance
-        page.setDefaultNavigationTimeout(120000); // Increased default timeout to 120 seconds (2 minutes)
+        page.setDefaultNavigationTimeout(120000); // 2 minutes
         console.log(`[Index Debug] Chunk ${startOffset}: New page opened from browser.`);
 
         let currentOffset = startOffset;
 
-        // Loop to get pages, but constrained by MAX_POSTS_PER_CHUNK
-        // If MAX_POSTS_PER_CHUNK is 10, this loop will run at most twice (50 posts/page),
-        // but the inner loop will break after 10 posts.
         for (let page_chunk_iteration = 0; page_chunk_iteration < Math.ceil(MAX_POSTS_PER_CHUNK / 50) || 1; page_chunk_iteration++) {
             if (postsProcessedInThisChunk >= MAX_POSTS_PER_CHUNK) {
                 io.emit('progress_update', { message: `[Chunk ${startOffset}] Reached maximum posts for this run (${MAX_POSTS_PER_CHUNK}).` });
@@ -40,7 +37,6 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
                 await new Promise(resolve => setTimeout(resolve, 3000));
             }
 
-            // Pass the 'page' object to scraper.js functions
             const postLinks = await scrapePostLinks(page, currentTargetUrl);
 
             if (!postLinks || postLinks.length === 0) {
@@ -64,7 +60,6 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
 
                 let imageUrls = [];
                 try {
-                    // Pass the 'page' object to scrapeImagesFromPost
                     imageUrls = await scrapeImagesFromPost(page, postLink);
                     io.emit('progress_update', { message: `[Chunk ${startOffset}] Found ${imageUrls.length} images/videos in post.` });
                     console.log(`[Index Debug] Chunk ${startOffset}: Found ${imageUrls.length} media items in post.`);
@@ -73,7 +68,7 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
                     io.emit('progress_update', { type: 'error', message: `[Chunk ${startOffset}] Failed to scrape images from post ${postLink}: ${scrapeError.message}` });
                 }
 
-                postsProcessedInThisChunk++; // Increment for each post visited
+                postsProcessedInThisChunk++;
 
                 for (let i = 0; i < imageUrls.length; i++) {
                     const imageUrl = imageUrls[i];
@@ -85,21 +80,25 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
                         console.log(`[Index Debug] Chunk ${startOffset}: Downloading and uploading media: ${filename}`);
 
                         const response = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 });
-                        mediaBuffer = Buffer.from(response.data);
+                        mediaBuffer = Buffer.from(response.data); // Store as Buffer directly
+
+                        // DETERMINE resource_type (image, video, raw)
                         const mimeType = response.headers['content-type'];
                         let resourceType = 'raw';
-
                         if (mimeType && mimeType.startsWith('image/')) {
                             resourceType = 'image';
                         } else if (mimeType && mimeType.startsWith('video/')) {
                             resourceType = 'video';
                         }
 
-                        const uploadResult = await cloudinary.uploader.upload(`data:${mimeType};base64,${mediaBuffer.toString('base64')}`, {
+                        // --- CRITICAL CHANGE: UPLOAD BUFFER DIRECTLY TO CLOUDINARY ---
+                        const uploadResult = await cloudinary.uploader.upload(mediaBuffer, {
                             folder: `onlyfans_scrapes/${ofModel}`,
-                            resource_type: resourceType,
-                            public_id: `${ofModel}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`
+                            resource_type: resourceType, // Use determined resource type
+                            public_id: `${ofModel}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+                            format: 'auto' // Let Cloudinary auto-detect format from buffer
                         });
+                        // --- END CRITICAL CHANGE ---
 
                         io.emit('progress_update', { message: `[Chunk ${startOffset}] Uploaded media: ${uploadResult.secure_url}` });
                         console.log(`[Index Debug] Chunk ${startOffset}: Media uploaded: ${uploadResult.secure_url}`);
@@ -113,7 +112,7 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
                         console.error(`[Index Error] Chunk ${startOffset}: Error processing media ${imageUrl}:`, uploadError.message);
                         io.emit('progress_update', { type: 'error', message: `[Chunk ${startOffset}] Failed to process media ${imageUrl}: ${uploadError.message}` });
                     } finally {
-                        mediaBuffer = null;
+                        mediaBuffer = null; // Ensure buffer is nullified for GC
                         if (global.gc) {
                             try {
                                 global.gc();
@@ -124,7 +123,6 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
                         }
                     }
 
-                    // Add a short delay between processing each individual image/video
                     if (i < imageUrls.length - 1) {
                         await new Promise(resolve => setTimeout(resolve, 500));
                         console.log(`[Index Debug] Chunk ${startOffset}: Short delay after media processing.`);
@@ -147,5 +145,4 @@ async function main(ofModel, startOffset, io, cloudinary, axios, browser) { // A
 
     return postsProcessedInThisChunk;
 }
-
 module.exports = main;
